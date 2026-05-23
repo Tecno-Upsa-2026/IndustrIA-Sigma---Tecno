@@ -1,0 +1,16 @@
+{
+  "name": "industria-sigma-backend",
+  "version": "1.0.0",
+  "description": "IndustrIA Sigma — Industrial Intelligence Platform Backend",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "dev": "node --watch server.js",
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.19.2",
+    "ws": "^8.17.1"
+  }
+}

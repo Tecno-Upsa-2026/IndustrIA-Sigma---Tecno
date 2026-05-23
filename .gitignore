@@ -1,0 +1,13 @@
+# Ignorar carpetas de dependencias de Node
+node_modules/
+Backend/node_modules/
+Frontend/node_modules/
+
+# Ignorar las carpetas de producción generadas (Vite)
+Frontend/dist/
+
+# Ignorar archivos de configuración de IA o variables locales
+.claude/
+.env
+Backend/.env
+Frontend/.env

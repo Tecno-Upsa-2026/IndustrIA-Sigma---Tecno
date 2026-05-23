@@ -1,0 +1,12 @@
+{
+  "name": "industria-sigma",
+  "private": true,
+  "scripts": {
+    "dev":     "concurrently -n backend,frontend -c cyan,magenta \"npm run dev --prefix Backend\" \"npm run dev --prefix Frontend\"",
+    "backend": "npm run dev --prefix Backend",
+    "frontend":"npm run dev --prefix Frontend"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}
