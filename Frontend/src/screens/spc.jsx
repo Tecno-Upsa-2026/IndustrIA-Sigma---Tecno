@@ -23,12 +23,12 @@ export default function SPCScreen(){
 
   const displayData = {
     points: subgroups,
-    mean:   stats.mean  || displayData.mean,
-    sd:     stats.sd    || displayData.sd,
-    ucl:    stats.ucl   || displayData.ucl,
-    lcl:    stats.lcl   || displayData.lcl,
-    usl:    stats.usl   || displayData.usl,
-    lsl:    stats.lsl   || displayData.lsl,
+    mean:   stats.mean  || SPC_DATA.mean,
+    sd:     stats.sd    || SPC_DATA.sd,
+    ucl:    stats.ucl   || SPC_DATA.ucl,
+    lcl:    stats.lcl   || SPC_DATA.lcl,
+    usl:    stats.usl   || SPC_DATA.usl,
+    lsl:    stats.lsl   || SPC_DATA.lsl,
     cp:     stats.cp    || SPC_DATA.cp,
     cpk:    stats.cpk   || SPC_DATA.cpk,
     oocIndices:  stats.oocIndices  || SPC_DATA.oocIndices  || [],
