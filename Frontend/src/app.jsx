@@ -39,7 +39,7 @@ export default function App(){
 
   return (
     <DataProvider>
-    <div className="min-h-screen flex relative" data-screen-label={`Shell · ${cur.title}`}>
+    <div className="h-screen flex relative overflow-hidden" data-screen-label={`Shell · ${cur.title}`}>
       <div className="fixed inset-0 grid-bg opacity-30 pointer-events-none"/>
       <div className="fixed inset-0 pointer-events-none" style={{
         background:'radial-gradient(900px 500px at 0% 0%, rgba(34,211,238,0.07), transparent 60%), radial-gradient(900px 600px at 100% 100%, rgba(168,85,247,0.07), transparent 60%)'
@@ -47,7 +47,7 @@ export default function App(){
 
       <Sidebar active={route} onNavigate={setRoute}/>
 
-      <main className="flex-1 min-w-0 flex flex-col relative">
+      <main className="flex-1 min-w-0 flex flex-col relative ml-[248px]">
         <Topbar title={cur.title} breadcrumb={cur.crumb} onLogout={()=>setAuthed(false)}/>
         <div className="flex-1 overflow-y-auto relative">
           <C/>

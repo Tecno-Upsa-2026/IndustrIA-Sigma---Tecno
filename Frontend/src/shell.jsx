@@ -119,7 +119,7 @@ export function Particles({ density=70 }){
 export function Sidebar({ active, onNavigate }){
   const grouped = NAV.reduce((acc,n)=>{ (acc[n.group]=acc[n.group]||[]).push(n); return acc;}, {});
   return (
-    <aside className="relative z-10 w-[248px] panel-strong border-r border-slate-700/40 flex flex-col">
+    <aside className="fixed top-0 left-0 z-20 h-screen w-[248px] panel-strong border-r border-slate-700/40 flex flex-col overflow-y-auto">
       {/* Logo */}
       <div className="h-16 px-4 flex items-center gap-3 hairline-bottom">
         <div className="relative w-9 h-9 rounded-md flex items-center justify-center shrink-0"
