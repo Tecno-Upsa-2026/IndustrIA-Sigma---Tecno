@@ -15,7 +15,7 @@ export default function ProfileScreen(){
   const p = liveProfile || FALLBACK_PROFILE;
 
   useEffect(() => {
-    if (p) setForm({ firstName: p.firstName||'Luis', lastName: p.lastName||'Mendoza', email: p.email||'', phone: p.phone||'' });
+    if (p) setForm({ firstName: p.firstName||'', lastName: p.lastName||'', email: p.email||'', phone: p.phone||'' });
   }, [liveProfile]);
 
   const handleSave = async () => {
@@ -69,28 +69,28 @@ export default function ProfileScreen(){
               <EditField label="Apellido" value={form.lastName}  onChange={v=>setForm(f=>({...f,lastName:v}))}/>
               <EditField label="Email"    value={form.email}     onChange={v=>setForm(f=>({...f,email:v}))}/>
               <EditField label="Teléfono" value={form.phone}     onChange={v=>setForm(f=>({...f,phone:v}))}/>
-              <Field label="Rol"          value={p.role || 'Plant Engineer'}/>
-              <Field label="Departamento" value={p.department || 'Operaciones'}/>
-              <Field label="Planta"       value={p.plant || 'Querétaro · MX-01'}/>
-              <Field label="Turno"        value={p.shift || 'B (14:00 – 22:00)'}/>
+              <Field label="Rol"          value={p.role          || '—'}/>
+              <Field label="Departamento" value={p.department    || '—'}/>
+              <Field label="Planta"       value={p.plant         || '—'}/>
+              <Field label="Turno"        value={p.shift         || '—'}/>
             </div>
           ) : (
             <div className="grid grid-cols-2 gap-4">
-              <Field label="Nombre"        value={p.firstName || 'Luis'}/>
-              <Field label="Apellido"      value={p.lastName  || 'Mendoza'}/>
-              <Field label="Email"         value={p.email     || 'l.mendoza@nexus.io'}/>
-              <Field label="Teléfono"      value={p.phone     || '+52 442 ••• 4231'}/>
-              <Field label="Rol"           value={p.role      || 'Plant Engineer'}/>
-              <Field label="Departamento"  value={p.department|| 'Operaciones'}/>
-              <Field label="Planta"        value={p.plant     || 'Querétaro · MX-01'}/>
-              <Field label="Turno"         value={p.shift     || 'B (14:00 – 22:00)'}/>
+              <Field label="Nombre"        value={p.firstName  || '—'}/>
+              <Field label="Apellido"      value={p.lastName   || '—'}/>
+              <Field label="Email"         value={p.email      || '—'}/>
+              <Field label="Teléfono"      value={p.phone      || '—'}/>
+              <Field label="Rol"           value={p.role       || '—'}/>
+              <Field label="Departamento"  value={p.department || '—'}/>
+              <Field label="Planta"        value={p.plant      || '—'}/>
+              <Field label="Turno"         value={p.shift      || '—'}/>
             </div>
           )}
           <div className="hairline-top mt-5 pt-4 grid grid-cols-2 gap-4">
-            <Field label="Idioma"       value={p.language  || 'Español (MX)'}/>
-            <Field label="Zona horaria" value={p.timezone  || 'America/Mexico_City'}/>
-            <Field label="Tema"         value={p.prefs?.theme || 'Dark · Industrial'}/>
-            <Field label="Densidad UI"  value={p.prefs?.density || 'Cómodo'}/>
+            <Field label="Idioma"       value={p.language       || '—'}/>
+            <Field label="Zona horaria" value={p.timezone       || '—'}/>
+            <Field label="Tema"         value={p.prefs?.theme   || '—'}/>
+            <Field label="Densidad UI"  value={p.prefs?.density || '—'}/>
           </div>
         </Card>
 
@@ -126,3 +126,4 @@ const FALLBACK_PROFILE = {
   avatar:'LM',
   prefs:{ push:true, sms:true, email:true, sounds:false, focus:false, aiProactive:true },
 };
+

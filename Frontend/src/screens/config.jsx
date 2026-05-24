@@ -15,7 +15,7 @@ export default function ConfigScreen(){
   const machinesArr = Object.keys(machinesMap).length ? Object.values(machinesMap) : MOCK_MACHINES;
   const wecoRules   = config?.wecoRules || {};
   const spcLimits   = config?.spcLimits || [];
-  const users       = liveUsers.length  ? liveUsers  : FALLBACK_USERS;
+  const users       = liveUsers.length ? liveUsers : FALLBACK_USERS;
 
   const tabs = [
     {id:'machines', l:'Máquinas',    ic:I.cpu},
@@ -211,6 +211,21 @@ function VariablesConfig(){
   );
 }
 
+const FALLBACK_USERS = [
+  {id:'u1', name:'Luis Mendoza', role:'Plant Engineer', email:'l.mendoza@nexus.io', access:'Total',    fa:true,  lastLogin:'hace 4m',  avatar:'LM'},
+  {id:'u2', name:'Ana Rivera',   role:'Quality Lead',   email:'a.rivera@nexus.io',  access:'Quality',  fa:true,  lastLogin:'hace 1h',  avatar:'AR'},
+  {id:'u3', name:'Carlos Núñez', role:'Maintenance',    email:'c.nunez@nexus.io',   access:'Mantto',   fa:false, lastLogin:'hace 6h',  avatar:'CN'},
+  {id:'u4', name:'Sofia Pérez',  role:'Operator B',     email:'s.perez@nexus.io',   access:'Operación',fa:true,  lastLogin:'hace 12m', avatar:'SP'},
+];
+
+const FALLBACK_SPC_LIMITS = [
+  {id:'sl1', n:'Diámetro inyector', t:12.50, usl:12.65, lsl:12.35, ucl:12.62, lcl:12.38, cp:1.33},
+  {id:'sl2', n:'Espesor pared',     t: 2.40, usl: 2.48, lsl: 2.32, ucl: 2.47, lcl: 2.33, cp:1.33},
+  {id:'sl3', n:'Peso pieza',        t:48.0,  usl:48.6,  lsl:47.4,  ucl:48.5,  lcl:47.5,  cp:1.50},
+  {id:'sl4', n:'Temperatura curado',t:214,   usl:220,   lsl:208,   ucl:219,   lcl:209,   cp:1.33},
+  {id:'sl5', n:'Densidad',          t: 1.18, usl: 1.22, lsl: 1.14, ucl: 1.21, lcl: 1.15, cp:1.50},
+];
+
 function SimsConfig(){
   return (
     <Card title="Escenarios de simulación" subtitle="Configuraciones guardadas y compartidas" accent="ai">
@@ -240,17 +255,3 @@ function SimsConfig(){
   );
 }
 
-const FALLBACK_USERS = [
-  {id:'u1', name:'Luis Mendoza', role:'Plant Engineer', email:'l.mendoza@nexus.io', access:'Total',    fa:true,  lastLogin:'hace 4m',  avatar:'LM'},
-  {id:'u2', name:'Ana Rivera',   role:'Quality Lead',   email:'a.rivera@nexus.io', access:'Quality',  fa:true,  lastLogin:'hace 1h',  avatar:'AR'},
-  {id:'u3', name:'Carlos Núñez', role:'Maintenance',    email:'c.nunez@nexus.io',  access:'Mantto',   fa:false, lastLogin:'hace 6h',  avatar:'CN'},
-  {id:'u4', name:'Sofia Pérez',  role:'Operator B',     email:'s.perez@nexus.io',  access:'Operación',fa:true,  lastLogin:'hace 12m', avatar:'SP'},
-];
-
-const FALLBACK_SPC_LIMITS = [
-  {id:'sl1', n:'Diámetro inyector', t:12.50, usl:12.65, lsl:12.35, ucl:12.62, lcl:12.38, cp:1.33},
-  {id:'sl2', n:'Espesor pared',     t: 2.40, usl: 2.48, lsl: 2.32, ucl: 2.47, lcl: 2.33, cp:1.33},
-  {id:'sl3', n:'Peso pieza',        t:48.0,  usl:48.6,  lsl:47.4,  ucl:48.5,  lcl:47.5,  cp:1.50},
-  {id:'sl4', n:'Temperatura curado',t:214,   usl:220,   lsl:208,   ucl:219,   lcl:209,   cp:1.33},
-  {id:'sl5', n:'Densidad',          t: 1.18, usl: 1.22, lsl: 1.14, ucl: 1.21, lcl: 1.15, cp:1.50},
-];

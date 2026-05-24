@@ -162,7 +162,7 @@ export function ParetoChart({ data, w=520, h=240 }){
         </linearGradient>
       </defs>
       {data.map((d,i)=>{
-        const bh  = (d.count/max)*iH;
+        const bh  = (d.count/total)*iH;
         const x   = padL + i*bw + 6;
         const bwi = bw - 12;
         return (
@@ -174,12 +174,12 @@ export function ParetoChart({ data, w=520, h=240 }){
         );
       })}
       <path d={cumPts.map((p,i)=>{
-        const x = padL + i*bw + bw/2;
+        const x = padL + (i+1)*bw;
         const y = padT + (1-p)*iH;
         return `${i?'L':'M'}${x.toFixed(1)} ${y.toFixed(1)}`;
       }).join(' ')} fill="none" stroke="#A855F7" strokeWidth="1.6"/>
       {cumPts.map((p,i)=>{
-        const x = padL + i*bw + bw/2;
+        const x = padL + (i+1)*bw;
         const y = padT + (1-p)*iH;
         return <circle key={i} cx={x} cy={y} r="3" fill="#A855F7" style={{filter:'drop-shadow(0 0 6px #A855F7)'}}/>;
       })}

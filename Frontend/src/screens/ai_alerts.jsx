@@ -1,20 +1,104 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Card, Chip, Stat, PageHeader } from '../shell'
 import { SparkLine } from '../charts'
 import { ALERTS as MOCK_ALERTS, makeSeries } from '../data'
 import { I } from '../icons'
 import { useData } from '../context/DataContext'
+import { supabase } from '../lib/supabase'
+
+function buildCsvContext(data) {
+  if (!data) return null;
+  const { header, rows, name } = data;
+  const numCols = header.filter(h => !isNaN(parseFloat(rows[0]?.[h])));
+  const stats = numCols.map(col => {
+    const vals = rows.map(r => parseFloat(r[col])).filter(v => !isNaN(v));
+    if (!vals.length) return null;
+    const mean = vals.reduce((a, b) => a + b, 0) / vals.length;
+    return `${col}: min=${Math.min(...vals).toFixed(2)}, max=${Math.max(...vals).toFixed(2)}, media=${mean.toFixed(2)}, último=${vals[vals.length-1].toFixed(2)}`;
+  }).filter(Boolean).join('\n');
+  const lastRows = rows.slice(-30);
+  const csvText  = [header.join(','), ...lastRows.map(r => header.map(h => r[h]).join(','))].join('\n');
+  return `Archivo: ${name} (${rows.length} registros)\nEstadísticas por columna:\n${stats}\n\nÚltimas ${lastRows.length} filas:\n${csvText}`;
+}
 
 export default function AIAlertsScreen() {
-  const { alerts: liveAlerts, actions } = useData();
-  const allAlerts = liveAlerts.length ? liveAlerts : MOCK_ALERTS;
-  const active    = allAlerts.filter(a => a.status !== 'closed');
+  const { alerts: liveAlerts, csvFiles, activeCsvId, actions } = useData();
+  const allAlerts    = liveAlerts.length ? liveAlerts : MOCK_ALERTS;
+  const active       = allAlerts.filter(a => a.status !== 'closed');
+  const activeCsvData = csvFiles[activeCsvId] || null;
 
   const [filter,   setFilter]   = useState('ALL');
   const [selected, setSelected] = useState(active[0]?.id);
+  const [aiRec,    setAiRec]    = useState({ id: null, text: null, loading: false });
+  const recConvId  = useRef(null);
+
+  // CSV chat state
+  const WELCOME = { role: 'ai', t: 'Hola. Tengo acceso a los datos de la planta y al CSV cargado. Podés preguntarme sobre temperaturas, vibraciones, defectos, tendencias o cualquier variable del proceso.' };
+  const [chatMsgs,    setChatMsgs]    = useState([WELCOME]);
+  const [chatInput,   setChatInput]   = useState('');
+  const [chatLoading, setChatLoading] = useState(false);
+  const [chatReady,   setChatReady]   = useState(false);
+  const chatConvId = useRef(null);
+  const chatEndRef = useRef(null);
+
+  // Load last conversation from Supabase on mount
+  useEffect(() => {
+    if (!supabase) { setChatReady(true); return; }
+    supabase
+      .from('conversations')
+      .select('id, messages(role, content, created_at)')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single()
+      .then(({ data }) => {
+        if (data?.messages?.length) {
+          chatConvId.current = data.id;
+          const loaded = data.messages
+            .sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
+            .map(m => ({ role: m.role, t: m.content }));
+          setChatMsgs([WELCOME, ...loaded]);
+        }
+      })
+      .finally(() => setChatReady(true));
+  }, []);
 
   const visible    = filter === 'ALL' ? active : active.filter(a => a.sev === filter);
   const sel        = active.find(a => a.id === selected) || active[0];
+
+  useEffect(() => {
+    if (!sel || sel.id === aiRec.id) return;
+    setAiRec({ id: sel.id, text: null, loading: true });
+    const prompt = `Alerta ${sel.sev} en ${sel.machine || sel.machineId}: "${sel.title}". ${sel.detail || ''}
+Dá una recomendación concreta: acción inmediata, costo evitable estimado y tiempo de resolución. Sé breve y específico.`;
+    actions.chat(prompt, recConvId.current)
+      .then(res => {
+        recConvId.current = res.conversationId;
+        setAiRec({ id: sel.id, text: res.response?.t || res.response?.text, loading: false });
+      })
+      .catch(() => setAiRec({ id: sel.id, text: sel.ai || 'Revisar telemetría y ajustar setpoints.', loading: false }));
+  }, [sel?.id]);
+
+  useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [chatMsgs]);
+
+  const handleChat = async (e) => {
+    e.preventDefault();
+    const txt = chatInput.trim();
+    if (!txt || chatLoading) return;
+    setChatInput('');
+    setChatMsgs(prev => [...prev, { role: 'user', t: txt }]);
+    setChatLoading(true);
+    try {
+      const csvCtx = buildCsvContext(activeCsvData);
+      const res = await actions.chat(txt, chatConvId.current, csvCtx);
+      chatConvId.current = res.conversationId;
+      setChatMsgs(prev => [...prev, { role: 'ai', t: res.response?.t || '—' }]);
+    } catch {
+      setChatMsgs(prev => [...prev, { role: 'ai', t: 'Error al consultar la IA. Verificá la conexión al backend.' }]);
+    } finally {
+      setChatLoading(false);
+    }
+  };
+
   const critCount  = active.filter(a => a.sev === 'CRITICAL').length;
   const highCount  = active.filter(a => a.sev === 'HIGH').length;
   const medCount   = active.filter(a => a.sev === 'MEDIUM').length;
@@ -156,14 +240,16 @@ export default function AIAlertsScreen() {
             <div className="mt-4 panel-strong rounded p-4 border" style={{borderColor:'rgba(168,85,247,0.35)', boxShadow:'0 0 24px rgba(168,85,247,0.15)'}}>
               <div className="flex items-center gap-2">
                 <span className="text-ai-400">{I.brain}</span>
-                <span className="text-[10px] tracking-widest text-ai-400 uppercase">RECOMENDACIÓN IA · confianza 92%</span>
+                <span className="text-[10px] tracking-widest text-ai-400 uppercase">RECOMENDACIÓN IA</span>
+                {aiRec.loading && <span className="text-[10px] text-slate-500 animate-pulse">analizando…</span>}
               </div>
-              <div className="text-sm text-white mt-2">{sel.ai || 'Analizar telemetría y ajustar setpoints del proceso.'}</div>
-              <div className="grid grid-cols-3 gap-2 mt-3 text-[11px]">
-                <div className="panel rounded p-2"><div className="text-slate-500">Acción sugerida</div><div className="text-white">Reducir setpoint · 230°C</div></div>
-                <div className="panel rounded p-2"><div className="text-slate-500">Costo evitable</div><div className="num text-grind-400">$18,400</div></div>
-                <div className="panel rounded p-2"><div className="text-slate-500">Tiempo estimado</div><div className="num text-white">8 min</div></div>
-              </div>
+              {aiRec.loading ? (
+                <div className="text-sm text-slate-500 mt-2 animate-pulse">Consultando modelo IA…</div>
+              ) : (
+                <div className="text-sm text-slate-200 mt-2 leading-relaxed whitespace-pre-wrap">
+                  {aiRec.id === sel?.id ? (aiRec.text || sel.ai || 'Revisar telemetría y ajustar setpoints.') : (sel.ai || 'Revisar telemetría y ajustar setpoints.')}
+                </div>
+              )}
               <div className="flex gap-2 mt-3">
                 <button className="px-3 py-1.5 text-xs rounded text-[#06080F] font-semibold"
                         style={{background:'linear-gradient(90deg,#A855F7,#22D3EE)', boxShadow:'0 0 12px rgba(168,85,247,0.5)'}}>
@@ -176,6 +262,45 @@ export default function AIAlertsScreen() {
           </Card>
         )}
       </div>
+
+      {/* CSV IA Chat */}
+      <Card title="Chat IA · Análisis de datos reales"
+            subtitle={activeCsvData ? `CSV: ${activeCsvData.name} · ${activeCsvData.rows.length} registros cargados` : 'Subí un CSV en Dashboard para análisis con datos reales del proceso'}
+            accent="ai" glow="shadow-glowAi">
+        <div className="h-72 overflow-y-auto space-y-3 mb-4 pr-1 flex flex-col">
+          {chatMsgs.map((m, i) => (
+            <div key={i} className={`flex gap-2 ${m.role === 'user' ? 'flex-row-reverse' : ''}`}>
+              <div className={`w-7 h-7 rounded shrink-0 grid place-items-center ${m.role === 'ai' ? 'bg-ai-400/15 text-ai-400' : 'bg-cyan2-400/15 text-cyan2-400'}`}>
+                {m.role === 'ai' ? I.bot : I.user}
+              </div>
+              <div className={`max-w-[80%] rounded-lg px-3 py-2 text-sm leading-relaxed whitespace-pre-wrap ${m.role === 'ai' ? 'panel text-slate-200' : 'text-cyan2-300 border border-cyan2-400/20'} `}
+                   style={m.role === 'user' ? {background:'rgba(34,211,238,0.07)'} : {}}>
+                {m.t}
+              </div>
+            </div>
+          ))}
+          {chatLoading && (
+            <div className="flex gap-2">
+              <div className="w-7 h-7 rounded shrink-0 grid place-items-center bg-ai-400/15 text-ai-400">{I.bot}</div>
+              <div className="panel rounded-lg px-3 py-2 text-sm text-slate-500 animate-pulse">Analizando datos…</div>
+            </div>
+          )}
+          <div ref={chatEndRef}/>
+        </div>
+        <form onSubmit={handleChat} className="flex gap-2">
+          <input
+            value={chatInput}
+            onChange={e => setChatInput(e.target.value)}
+            placeholder={activeCsvData ? `Preguntá sobre ${activeCsvData.name}… (temperatura, defectos, tendencias)` : 'Preguntá sobre el estado de la planta…'}
+            className="flex-1 panel rounded-md px-3 py-2 text-sm text-slate-200 placeholder:text-slate-600 outline-none border border-transparent focus:border-ai-400/40 transition"
+          />
+          <button type="submit" disabled={chatLoading || !chatInput.trim()}
+                  className="px-4 py-2 text-xs rounded-md font-semibold disabled:opacity-40 transition flex items-center gap-1.5"
+                  style={{background:'linear-gradient(90deg,#A855F7,#22D3EE)', color:'#06080F', boxShadow:'0 0 12px rgba(168,85,247,0.4)'}}>
+            {I.send}
+          </button>
+        </form>
+      </Card>
     </div>
   );
 }

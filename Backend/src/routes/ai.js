@@ -1,150 +1,253 @@
 import { Router } from 'express';
 import { state, getMachinesArray, getActiveAlerts } from '../store/state.js';
 import { calcGlobalMetrics } from '../simulation/metrics.js';
+import { supabase } from '../lib/supabase.js';
 
 const router = Router();
 
-// ── Context-aware AI response engine ─────────────────────────────────────────
-function aiRespond(query, convHistory) {
-  const q       = query.toLowerCase();
+const GROQ_KEY   = process.env.GROQ_API_KEY;
+const GROQ_MODEL = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
+const GROQ_URL   = 'https://api.groq.com/openai/v1/chat/completions';
+
+// ── Build live plant context for system prompt ────────────────────────────────
+function buildPlantContext() {
   const machines = getMachinesArray();
   const alerts   = getActiveAlerts();
   const metrics  = calcGlobalMetrics();
-  const ovn      = state.machines['OVN-09'];
-  const inj      = state.machines['INJ-07'];
 
-  // ── OVN-09 / temperature queries ────────────────────────────────────────
-  if (q.includes('ovn') || q.includes('horno') || q.includes('temperatura') && q.includes('crítica')) {
-    return {
-      text: `OVN-09 muestra drift térmico sostenido. Temperatura actual: ${ovn?.temp.toFixed(1)}°C (límite: 248°C). El patrón indica un incremento de ~0.8°C cada 5 minutos. Basado en la trayectoria, estimo falla en ${ovn?.temp > 248 ? '~2.1h' : '~3.4h'}.`,
-      insight: true,
-      pFailure: Math.round(55 + (ovn?.temp - 240) * 3),
-      timeRemaining: ovn?.temp > 248 ? '~2.1h' : '~3.4h',
-      avoidableCost: '$18,400',
-      actions: true,
-    };
+  const machineList = machines.map(m =>
+    `  - ${m.id} (${m.name}): estado=${m.status}, temp=${m.temp?.toFixed(1)}°C, vib=${m.vib?.toFixed(2)}g, OEE=${m.oee?.toFixed(1)}%, defectos=${m.defect?.toFixed(1)}%`
+  ).join('\n');
+
+  const alertList = alerts.slice(0, 5).map(a =>
+    `  - [${a.sev}] ${a.machineId || a.machine}: ${a.message || a.title}`
+  ).join('\n') || '  (ninguna)';
+
+  return `Eres el asistente de IA industrial de IndustrIA Sigma, planta Querétaro MX-01.
+Tenés acceso a datos en tiempo real de la planta. Respondé SIEMPRE en español, de forma concisa y técnica.
+Usá datos concretos de la planta en tus respuestas. Cuando des recomendaciones, sé específico (valores, máquinas, acciones).
+
+ESTADO ACTUAL DE LA PLANTA (${new Date().toLocaleTimeString('es-MX')}):
+Máquinas:
+${machineList}
+
+Alertas activas: ${alerts.length}
+${alertList}
+
+Métricas globales:
+  - OEE global: ${metrics.oee}%
+  - DPMO: ${metrics.dpmo}
+  - Nivel sigma: ${metrics.sigma}σ
+  - Producción/h: ${metrics.production} piezas
+  - Alertas críticas: ${alerts.filter(a => a.sev === 'CRITICAL').length}
+
+Enfocate en: calidad (Cp, Cpk, DPMO), OEE, mantenimiento predictivo y optimización de proceso.
+Sé directo. Sin introducciones largas. Máximo 3 párrafos o puntos concretos.`;
+}
+
+// ── Call Groq API ─────────────────────────────────────────────────────────────
+async function callGroq(messages, maxTokens = 600) {
+  if (!GROQ_KEY) throw new Error('GROQ_API_KEY no configurada');
+
+  const res = await fetch(GROQ_URL, {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${GROQ_KEY}` },
+    body: JSON.stringify({
+      model:       GROQ_MODEL,
+      messages,
+      max_tokens:  maxTokens,
+      temperature: 0.4,
+    }),
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error?.message || `Groq error ${res.status}`);
   }
 
-  // ── Cp / capability ──────────────────────────────────────────────────────
-  if (q.includes('cp') || q.includes('capability') || q.includes('cpk') || q.includes('inj-07')) {
-    const cp = parseFloat((1.55 - (inj?.temp - 218) * 0.015).toFixed(3));
-    return {
-      text: `Cp de INJ-07 actualmente en ${cp < 1 ? cp.toFixed(2) : cp.toFixed(2)}. La variabilidad aumentó porque la temperatura de cilindro subió ${(inj?.temp - 218).toFixed(1)}°C sobre el óptimo (218°C). Tres acciones recomendadas: ① Bajar setpoint a 218°C. ② Verificar boquilla #3. ③ Aumentar frecuencia de muestreo a cada 5 min.`,
-      meta: [
-        { l:'Cp actual',   v: cp.toFixed(2),  c: cp < 1 ? 'red' : 'amber' },
-        { l:'Cp objetivo', v:'1.33',           c:'cyan' },
-        { l:'Δ requerido', v:`+${(1.33 - cp).toFixed(2)}`, c:'amber' },
-      ],
-    };
+  const data = await res.json();
+  return data.choices[0].message.content.trim();
+}
+
+// ── Supabase helpers ──────────────────────────────────────────────────────────
+async function dbGetOrCreateConversation(conversationId) {
+  if (!supabase) return null;
+
+  if (conversationId) {
+    const { data } = await supabase
+      .from('conversations')
+      .select('id')
+      .eq('id', conversationId)
+      .single();
+    if (data) return data.id;
   }
 
-  // ── Failure prediction ────────────────────────────────────────────────────
-  if (q.includes('falla') || q.includes('predic') || q.includes('próximas 4h') || q.includes('4h')) {
-    const critMachines = machines.filter(m => m.status === 'CRITICAL' || m.status === 'WARN');
-    const list = critMachines.map(m => `• **${m.id}**: ${m.status} — temp ${m.temp.toFixed(1)}°C, vib ${m.vib.toFixed(2)}g`).join('\n');
-    return {
-      text: `Análisis predictivo para las próximas 4 horas:\n\n${list}\n\nProbabilidad de parada no planeada: ${critMachines.length > 1 ? '68%' : '34%'}. Acción prioritaria: atender OVN-09.`,
-      meta: [
-        { l:'Máquinas en riesgo', v: String(critMachines.length), c:'red' },
-        { l:'P(parada 4h)',       v: critMachines.length > 1 ? '68%' : '34%', c:'amber' },
-        { l:'Costo evitable',     v:'$21K',   c:'green' },
-      ],
-    };
+  const newId = `conv-${Date.now()}`;
+  const { data, error } = await supabase
+    .from('conversations')
+    .insert({ id: newId })
+    .select('id')
+    .single();
+
+  if (error) { console.error('[Supabase] insert conversation:', error.message); return null; }
+  return data.id;
+}
+
+async function dbSaveMessage(conversationId, role, content) {
+  if (!supabase || !conversationId) return;
+  const { error } = await supabase
+    .from('messages')
+    .insert({ conversation_id: conversationId, role, content });
+  if (error) console.error('[Supabase] insert message:', error.message);
+}
+
+async function dbGetHistory(conversationId, limit = 10) {
+  if (!supabase || !conversationId) return [];
+  const { data, error } = await supabase
+    .from('messages')
+    .select('role, content')
+    .eq('conversation_id', conversationId)
+    .order('created_at', { ascending: true })
+    .limit(limit);
+  if (error) { console.error('[Supabase] get history:', error.message); return []; }
+  return data || [];
+}
+
+async function dbGetConversations() {
+  if (!supabase) return state.conversations;
+  const { data, error } = await supabase
+    .from('conversations')
+    .select('id, created_at, messages(role, content, created_at)')
+    .order('created_at', { ascending: false })
+    .limit(20);
+  if (error) { console.error('[Supabase] get conversations:', error.message); return state.conversations; }
+  return (data || []).map(c => ({
+    id:        c.id,
+    createdAt: new Date(c.created_at).getTime(),
+    messages:  (c.messages || []).map(m => ({ role: m.role, t: m.content, ts: new Date(m.created_at).getTime() })),
+  }));
+}
+
+// ── Insights cache (refresh every 5 min) ──────────────────────────────────────
+let insightsCache = { data: null, ts: 0 };
+
+async function generateInsights() {
+  const now = Date.now();
+  if (insightsCache.data && now - insightsCache.ts < 5 * 60 * 1000) {
+    return insightsCache.data;
   }
 
-  // ── DMAIC report ─────────────────────────────────────────────────────────
-  if (q.includes('dmaic') || q.includes('reporte')) {
-    return {
-      text: `Reporte DMAIC generado para proyecto INJ-07:\n\n**Define**: Reducir defectos en línea 2 de 4.8% → 1.5%.\n**Measure**: Cp=0.89, DPMO=${metrics.dpmo}.\n**Analyze**: Causa raíz = drift térmico en cilindro.\n**Improve**: Setpoint ajustado -8°C → Cp subió a 1.18.\n**Control**: SPC activo, reglas WECO 1-3-5.`,
-      actions: true,
-    };
-  }
+  const systemPrompt = buildPlantContext();
+  const userPrompt   = `Generá exactamente 4 insights del estado actual de la planta, en formato JSON array.
+Cada insight debe tener: tag (1 palabra en mayúsculas), c (color: red|amber|cyan|green|ai), t (texto del insight, máx 90 chars), ago (tiempo estimado, ej "hace 3m"), conf (confianza como %, ej "91%").
+Respondé SOLO con el JSON array, sin texto extra. Ejemplo: [{"tag":"ANOMALÍA","c":"red","t":"...","ago":"hace 5m","conf":"91%"}]`;
 
-  // ── Shift comparison ─────────────────────────────────────────────────────
-  if (q.includes('turno') || q.includes('turno a') || q.includes('turno b')) {
-    return {
-      text: `Comparación Turno A vs Turno B (últimas 24h):\n\n| Métrica | Turno A | Turno B |\n|---|---|---|\n| OEE | 89.2% | 87.4% |\n| DPMO | 1,180 | ${metrics.dpmo} |\n| Defectos | 3.1% | ${(metrics.dpmo/10000).toFixed(1)}% |\n\nTurno A muestra mejor rendimiento. Correlación identificada con experiencia del operador en INJ-07.`,
-    };
-  }
+  try {
+    const raw  = await callGroq([
+      { role: 'system', content: systemPrompt },
+      { role: 'user',   content: userPrompt },
+    ], 400);
 
-  // ── Optimal setpoints ────────────────────────────────────────────────────
-  if (q.includes('setpoint') || q.includes('optim') || q.includes('óptimo')) {
-    return {
-      text: `Setpoints óptimos calculados mediante modelo de optimización RSM:\n\n• **OVN-09**: 230°C (actual: ${ovn?.temp.toFixed(1)}°C) → reducirá defectos en ~38%\n• **INJ-07**: 218°C (actual: ${inj?.temp.toFixed(1)}°C) → mejorará Cp a ~1.33\n• **PRS-12**: Presión 145 bar (actual: 150) → reducirá vibración 12%`,
-      actions: true,
-      meta: [
-        { l:'Mejora Cp esperada',    v:'+0.44',    c:'green' },
-        { l:'Reducción defectos',    v:'-38%',     c:'green' },
-        { l:'Ahorro estimado/día',   v:'$1,200',   c:'cyan'  },
-      ],
-    };
-  }
+    const match = raw.match(/\[[\s\S]*\]/);
+    if (!match) throw new Error('No JSON array in response');
+    const insights = JSON.parse(match[0]);
 
-  // ── General analysis (default) ────────────────────────────────────────────
-  const critCount = machines.filter(m => m.status === 'CRITICAL').length;
-  const warnCount = machines.filter(m => m.status === 'WARN').length;
-  return {
-    text: `Análisis general · Planta MX-01 · ${new Date().toLocaleTimeString()}:\n\n• OEE global: **${metrics.oee}%** ${metrics.oee > 87 ? '✓' : '⚠'}\n• DPMO: **${metrics.dpmo}** (sigma ${metrics.sigma})\n• Alertas activas: **${metrics.activeAlerts}** (${critCount} críticas, ${warnCount} advertencias)\n• Producción/h: **${metrics.production} pzs**\n\nPrioridad: ${critCount > 0 ? `atender OVN-09 (sobrecalentamiento).` : 'operación estable, mantener monitoreo.'}`,
-    meta: [
-      { l:'OEE',    v:`${metrics.oee}%`,   c: metrics.oee > 85 ? 'green' : 'amber' },
-      { l:'Alertas', v:String(metrics.activeAlerts), c: critCount > 0 ? 'red' : 'cyan' },
-      { l:'Sigma',  v:String(metrics.sigma), c:'cyan' },
-    ],
-  };
+    insightsCache = { data: insights, ts: now };
+    return insights;
+  } catch (e) {
+    const machines = getMachinesArray();
+    const crit     = machines.filter(m => m.status === 'CRITICAL');
+    const warn     = machines.filter(m => m.status === 'WARN');
+    const metrics  = calcGlobalMetrics();
+
+    const fallback = [
+      crit[0] && { tag:'CRÍTICO', c:'red',   t:`${crit[0].id} en estado crítico — temp ${crit[0].temp?.toFixed(1)}°C`, ago:'ahora', conf:'—' },
+      warn[0] && { tag:'ATENCIÓN',c:'amber', t:`${warn[0].id} requiere atención — vibración ${warn[0].vib?.toFixed(2)}g`, ago:'ahora', conf:'—' },
+      { tag:'OEE',  c:'cyan', t:`OEE global: ${metrics.oee}% — sigma nivel ${metrics.sigma}σ`, ago:'1m', conf:'—' },
+      { tag:'DPMO', c:'ai',   t:`DPMO actual: ${metrics.dpmo} — producción ${metrics.production} pzs/h`, ago:'1m', conf:'—' },
+    ].filter(Boolean).slice(0, 4);
+
+    insightsCache = { data: fallback, ts: now };
+    return fallback;
+  }
 }
 
 // ── Routes ────────────────────────────────────────────────────────────────────
 
 // GET /api/ai/conversations
-router.get('/conversations', (_req, res) => {
-  res.json(state.conversations);
+router.get('/conversations', async (_req, res) => {
+  try {
+    const convs = await dbGetConversations();
+    res.json(convs);
+  } catch {
+    res.json(state.conversations);
+  }
 });
 
 // POST /api/ai/chat
-router.post('/chat', (req, res) => {
-  const { message, conversationId } = req.body;
+router.post('/chat', async (req, res) => {
+  const { message, conversationId, csvContext } = req.body;
   if (!message?.trim()) return res.status(400).json({ error: 'message requerido' });
 
-  // Find or create conversation
-  let conv = state.conversations.find(c => c.id === conversationId);
-  if (!conv) {
-    conv = { id: `conv-${Date.now()}`, messages: [], createdAt: Date.now() };
-    state.conversations.unshift(conv);
+  // Persist conversation in Supabase (fallback to in-memory)
+  const convId = await dbGetOrCreateConversation(conversationId) || (() => {
+    let c = state.conversations.find(c => c.id === conversationId);
+    if (!c) { c = { id: `conv-${Date.now()}`, messages: [], createdAt: Date.now() }; state.conversations.unshift(c); }
+    return c.id;
+  })();
+
+  // Save user message
+  await dbSaveMessage(convId, 'user', message);
+
+  // Also mirror in-memory for in-session history if Supabase is up
+  let memConv = state.conversations.find(c => c.id === convId);
+  if (!memConv) { memConv = { id: convId, messages: [], createdAt: Date.now() }; state.conversations.unshift(memConv); }
+  memConv.messages.push({ role: 'user', t: message, ts: Date.now() });
+
+  // Build system prompt
+  const systemPrompt = buildPlantContext() +
+    (csvContext ? `\n\nDATOS CSV ADJUNTOS (usá estos datos reales para responder):\n${csvContext}` : '');
+
+  // Get history from Supabase or memory
+  const dbHistory = await dbGetHistory(convId, 10);
+  const history = (dbHistory.length ? dbHistory : memConv.messages.slice(-10)).map(m => ({
+    role:    m.role === 'ai' ? 'assistant' : 'user',
+    content: m.content || m.t || '',
+  }));
+
+  let text;
+  try {
+    text = await callGroq([{ role: 'system', content: systemPrompt }, ...history]);
+  } catch (e) {
+    console.error('[AI] Groq error:', e.message);
+    text = `Error al conectar con el modelo IA: ${e.message}. Verificá la API key en .env.`;
   }
 
-  // Add user message
-  const userMsg = { role:'user', t: message, ts: Date.now() };
-  conv.messages.push(userMsg);
+  // Save AI response
+  await dbSaveMessage(convId, 'ai', text);
+  const aiMsg = { role: 'ai', t: text, ts: Date.now() };
+  memConv.messages.push(aiMsg);
 
-  // Generate AI response
-  const aiResp = aiRespond(message, conv.messages);
-  const aiMsg  = { role:'ai', ts: Date.now(), ...aiResp };
-  conv.messages.push(aiMsg);
-
-  res.json({ conversationId: conv.id, response: aiMsg });
+  res.json({ conversationId: convId, response: aiMsg });
 });
 
-// GET /api/ai/insights — turno insights panel
-router.get('/insights', (_req, res) => {
-  const ovn  = state.machines['OVN-09'];
-  const inj  = state.machines['INJ-07'];
-  const mtrs = calcGlobalMetrics();
-
-  res.json([
-    { tag:'ANOMALÍA',    c:'red',   t:`Pico térmico OVN-09 — ${ovn?.temp.toFixed(1)}°C (baseline 6σ)`,   ago: '7m'  },
-    { tag:'CORRELACIÓN', c:'ai',    t:`Cp INJ-07 correlaciona 0.78 con humedad ambiente`,                 ago: '14m' },
-    { tag:'PATRÓN',      c:'cyan',  t:`Vibración PRS-12 sube los lunes 8–10am`,                          ago: '21m' },
-    { tag:'OPORTUNIDAD', c:'green', t:`Ahorro estimado $1.2K/día reduciendo speed -5% en línea 2`,        ago: '35m' },
-  ]);
+// GET /api/ai/insights
+router.get('/insights', async (_req, res) => {
+  try {
+    const insights = await generateInsights();
+    res.json(insights);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // GET /api/ai/models
 router.get('/models', (_req, res) => {
   res.json([
-    { n:'Anomaly-Detect',  v:'v2.41', conf:97, c:'#A855F7' },
-    { n:'Predict-Failure', v:'v1.8',  conf:91, c:'#22D3EE' },
-    { n:'Process-Optim',   v:'v3.0',  conf:88, c:'#3B82F6' },
-    { n:'Vision-QA',       v:'v0.9',  conf:82, c:'#10B981' },
+    { n: GROQ_MODEL.split('-').slice(0, 2).join(' '), v: 'Groq', conf: 97, c: '#A855F7' },
+    { n: 'Anomaly-Detect',  v: 'v2.41', conf: 91, c: '#22D3EE' },
+    { n: 'Predict-Failure', v: 'v1.8',  conf: 88, c: '#3B82F6' },
+    { n: 'Process-Optim',   v: 'v3.0',  conf: 84, c: '#10B981' },
   ]);
 });
 

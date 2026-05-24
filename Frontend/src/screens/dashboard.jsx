@@ -1,9 +1,16 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { Card, Chip, PageHeader, StatusDot } from '../shell'
 import { LiveWave } from '../charts'
 import { MACHINES as MOCK_MACHINES } from '../data'
 import { I } from '../icons'
 import { useData } from '../context/DataContext'
+
+// Auto-detect machine ID from filename (e.g. "INJ-07_historico.csv" → "INJ-07")
+function detectMachineId(fileName, machinesArr) {
+  const upper = fileName.toUpperCase();
+  const match = machinesArr.find(m => upper.includes(m.id.toUpperCase()));
+  return match?.id || fileName.replace(/\.(csv|txt)$/i, '');
+}
 
 // ─── CSV parser ────────────────────────────────────────────────────────────────
 function parseCSV(text) {
@@ -38,36 +45,33 @@ function MiniChart({ data, color='#22D3EE' }) {
 // ─── CSV historical view ───────────────────────────────────────────────────────
 const CHART_COLORS = ['#22D3EE','#10B981','#F59E0B','#A855F7','#EF4444','#3B82F6'];
 
-function CSVSection({ csvFiles, activeCsv, onAdd, onSelect, onRemove }) {
+function CSVSection({ csvEntries, activeCsvId, activeCsvData, onAdd, onSelect, onRemove }) {
   const fileRef = useRef(null);
-  const data    = csvFiles[activeCsv];
+  const data    = activeCsvData;
 
   const handleFile = (e) => {
     const file = e.target.files[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = ev => {
-      const parsed = parseCSV(ev.target.result);
-      onAdd(file.name, parsed);
-    };
+    reader.onload = ev => { onAdd(file.name, parseCSV(ev.target.result)); };
     reader.readAsText(file);
     e.target.value = '';
   };
 
-  if (csvFiles.length === 0) {
+  if (csvEntries.length === 0) {
     return (
-      <Card title="Histórico de máquina · datos reales" subtitle="Sube un archivo CSV para visualizar el histórico" accent="cyan">
+      <Card title="Histórico de máquinas · datos reales" subtitle="Subí un CSV para visualizar el histórico" accent="cyan">
         <div className="flex flex-col items-center justify-center py-12 gap-4">
           <div className="w-16 h-16 rounded-2xl grid place-items-center" style={{background:'rgba(34,211,238,0.08)', border:'1px dashed rgba(34,211,238,0.3)'}}>
             <span className="text-cyan2-400">{I.upload}</span>
           </div>
           <div className="text-center">
             <div className="text-slate-300 text-sm font-medium">No hay datos cargados</div>
-            <div className="text-slate-500 text-xs mt-1">Formato: timestamp, temperatura, presion, vibracion, oee, defectos, yield…</div>
+            <div className="text-slate-500 text-xs mt-1 max-w-xs">El nombre del archivo debe incluir el ID de la máquina (ej: INJ-07_historico.csv). Todos los demás screens leerán de este CSV.</div>
           </div>
           <button onClick={() => fileRef.current?.click()}
                   className="flex items-center gap-2 px-4 py-2 text-xs rounded-md bg-cyan2-400/15 border border-cyan2-400/40 text-cyan2-400 hover:bg-cyan2-400/25 transition">
-            {I.upload} Subir CSV / Excel
+            {I.upload} Subir CSV
           </button>
           <input ref={fileRef} type="file" accept=".csv,.txt" className="hidden" onChange={handleFile}/>
         </div>
@@ -75,21 +79,22 @@ function CSVSection({ csvFiles, activeCsv, onAdd, onSelect, onRemove }) {
     );
   }
 
-  const numCols = data ? getNumericCols(data.header, data.rows) : [];
+  const numCols  = data ? getNumericCols(data.header, data.rows) : [];
   const lastRows = data ? data.rows.slice(-40) : [];
 
   return (
-    <Card title="Histórico de máquina · datos reales"
-          subtitle={data ? `${data.rows.length} registros · ${numCols.length} variables` : ''}
+    <Card title="Histórico de máquinas · datos reales"
+          subtitle={data ? `${data.rows.length} registros · ${numCols.length} variables · ${activeCsvId}` : ''}
           accent="cyan"
           action={
-            <div className="flex items-center gap-2">
-              {csvFiles.map((f,i) => (
-                <div key={i} className="flex items-center gap-1">
-                  <button onClick={() => onSelect(i)} className={`px-2 py-1 text-[10px] rounded ${activeCsv===i?'bg-cyan2-400/15 text-cyan2-400 border border-cyan2-400/30':'text-slate-400 hover:text-white panel'}`}>
-                    {f.name.replace(/_historico\.csv/i,'').replace(/\.csv/i,'')}
+            <div className="flex items-center gap-2 flex-wrap">
+              {csvEntries.map(([id, f]) => (
+                <div key={id} className="flex items-center gap-1">
+                  <button onClick={() => onSelect(id)}
+                          className={`px-2 py-1 text-[10px] rounded ${activeCsvId===id?'bg-cyan2-400/15 text-cyan2-400 border border-cyan2-400/30':'text-slate-400 hover:text-white panel'}`}>
+                    {id}
                   </button>
-                  <button onClick={() => onRemove(i)} className="text-slate-600 hover:text-crit-400">{I.x}</button>
+                  <button onClick={() => onRemove(id)} className="text-slate-600 hover:text-crit-400">{I.x}</button>
                 </div>
               ))}
               <button onClick={() => fileRef.current?.click()} className="flex items-center gap-1 px-2 py-1 text-[10px] rounded bg-cyan2-400/15 border border-cyan2-400/40 text-cyan2-400">
@@ -225,19 +230,23 @@ function MachineMini({ m, selected, onSelect }) {
 
 // ─── Main Dashboard ───────────────────────────────────────────────────────────
 export default function Dashboard() {
-  const { machines: machinesMap } = useData();
+  const { machines: machinesMap, csvFiles, activeCsvId, aiInsights, actions } = useData();
   const machinesArr = Object.keys(machinesMap).length ? Object.values(machinesMap) : MOCK_MACHINES;
 
   const [selectedMachine, setSelectedMachine] = useState('INJ-07');
-  const [csvFiles,   setCsvFiles]   = useState([]);
-  const [activeCsv,  setActiveCsv]  = useState(0);
   const [params, setParams] = useState({ temp:204, speed:78, pressure:124, vibration:0.42, torque:214 });
 
-  const handleAddCsv  = (name, data) => { setCsvFiles(f => [...f, { name, ...data }]); setActiveCsv(csvFiles.length); };
-  const handleRemoveCsv = (i) => {
-    setCsvFiles(f => f.filter((_,j) => j !== i));
-    setActiveCsv(a => Math.max(0, a - (i <= a ? 1 : 0)));
+  useEffect(() => { actions.fetchAIInsights().catch(() => {}); }, []);
+
+  const csvEntries   = Object.entries(csvFiles);           // [[id, data], ...]
+  const activeCsvData = csvFiles[activeCsvId] || null;
+
+  const handleAddCsv = (fileName, parsed) => {
+    const id = detectMachineId(fileName, machinesArr);
+    actions.addCsv(id, { name: fileName, ...parsed });
   };
+  const handleRemoveCsv = (id) => actions.removeCsv(id);
+  const handleSelectCsv = (id) => actions.setActiveCsv(id);
 
   return (
     <div className="p-6 space-y-5">
@@ -245,25 +254,21 @@ export default function Dashboard() {
         eyebrow="// CONTROL CENTER"
         title="Dashboard"
         desc="Histórico de máquinas, estado de planta y simulación de variables."
-        actions={
-          <div className="flex items-center gap-2">
-            <Chip color="slate">{machinesArr.length} activos</Chip>
-          </div>
-        }
+        actions={null}
       />
 
       {/* 1. CSV historical data — main section */}
       <CSVSection
-        csvFiles={csvFiles}
-        activeCsv={activeCsv}
+        csvEntries={csvEntries}
+        activeCsvId={activeCsvId}
+        activeCsvData={activeCsvData}
         onAdd={handleAddCsv}
-        onSelect={setActiveCsv}
+        onSelect={handleSelectCsv}
         onRemove={handleRemoveCsv}
       />
 
       {/* 2. Machine status grid */}
-      <Card title="Estado de máquinas" subtitle={`${machinesArr.length} activos · línea Q1-Q4`} accent="cyan"
-            action={<Chip color="slate">{machinesArr.length} assets</Chip>}>
+      <Card title="Estado de máquinas" subtitle={`${machinesArr.length} activos · línea Q1-Q4`} accent="cyan">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {machinesArr.map(m => (
             <MachineMini key={m.id} m={m} selected={selectedMachine} onSelect={setSelectedMachine}/>
@@ -276,26 +281,28 @@ export default function Dashboard() {
         <Card title="Copiloto IA · Insights" subtitle="Recomendaciones automáticas en tiempo real"
               className="col-span-12 xl:col-span-5" accent="ai" glow="shadow-glowAi">
           <div className="space-y-2">
-            {[
-              {tag:'PREDICCIÓN', txt:'Falla probable en OVN-09 en ~3.2h por temperatura sostenida.', conf:'92%', t:'hace 14s', c:'red'},
-              {tag:'OPTIMIZAR',  txt:'Reducir setpoint INJ-07 a 198°C ahorra 6.4% energía sin afectar Cp.', conf:'87%', t:'hace 2m', c:'cyan'},
-              {tag:'CALIDAD',    txt:'Detecté drift en caliper de WLD-02. Recalibrar en próximo turno.', conf:'81%', t:'hace 11m', c:'amber'},
-            ].map((x, i) => (
+            {(aiInsights.length ? aiInsights : [
+              {tag:'CARGANDO', c:'ai', t:'Consultando IA…', ago:'—', conf:'—'},
+            ]).map((x, i) => {
+              const col = x.c==='red'?'#EF4444':(x.c==='amber'?'#F59E0B':(x.c==='green'?'#10B981':(x.c==='ai'?'#A855F7':'#22D3EE')));
+              const chipColor = x.c==='red'?'red':(x.c==='amber'?'amber':(x.c==='green'?'green':'cyan'));
+              return (
               <div key={i} className="panel rounded-md p-3 flex items-start gap-3 hover:border-ai-400/30 transition">
                 <div className="shrink-0 w-8 h-8 rounded grid place-items-center"
-                     style={{color: x.c==='red'?'#EF4444':(x.c==='amber'?'#F59E0B':'#22D3EE'), background:`rgba(${x.c==='red'?'239,68,68':(x.c==='amber'?'245,158,11':'34,211,238')},0.12)`}}>
+                     style={{color: col, background:`rgba(${x.c==='red'?'239,68,68':(x.c==='amber'?'245,158,11':(x.c==='green'?'16,185,129':(x.c==='ai'?'168,85,247':'34,211,238')))},0.12)`}}>
                   {I.bot}
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-1">
-                    <Chip color={x.c==='red'?'red':(x.c==='amber'?'amber':'cyan')}>{x.tag}</Chip>
-                    <span className="text-[10px] text-slate-500 num">conf {x.conf}</span>
-                    <span className="text-[10px] text-slate-500 ml-auto">{x.t}</span>
+                    <Chip color={chipColor}>{x.tag}</Chip>
+                    {x.conf && x.conf !== '—' && <span className="text-[10px] text-slate-500 num">conf {x.conf}</span>}
+                    <span className="text-[10px] text-slate-500 ml-auto">{x.ago}</span>
                   </div>
-                  <div className="text-sm text-slate-200">{x.txt}</div>
+                  <div className="text-sm text-slate-200">{x.t}</div>
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         </Card>
 

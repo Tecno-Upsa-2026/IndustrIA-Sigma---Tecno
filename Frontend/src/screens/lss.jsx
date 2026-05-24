@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import { Card, Stat, PageHeader, Chip } from '../shell'
 import { SparkLine, ParetoChart, Histogram, ControlChart } from '../charts'
-import { PARETO, ISHIKAWA, SPC_DATA, makeSeries } from '../data'
+import { PARETO, ISHIKAWA, SPC_DATA } from '../data'
 import { I } from '../icons'
 import { useData } from '../context/DataContext'
 
@@ -24,21 +24,22 @@ export default function LSSScreen() {
     {p:'C', name:'Control', pct:8,   c:'#64748B'},
   ];
 
-  // SPC data (live INJ-07 if available, else mock)
-  const liveINJ  = spcData['INJ-07'];
-  const points   = liveINJ?.points?.map(p => p.value) || SPC_DATA.points;
-  const stats    = liveINJ?.stats || {};
+  // SPC data — live if available, demo data otherwise
+  const liveINJ = spcData['INJ-07'];
+  const points  = liveINJ?.points?.map(p => p.value) || SPC_DATA.points;
+  const stats   = liveINJ?.stats || {};
+  const hasSPC  = points.length > 0;
 
   const spc = {
     points,
-    mean: stats.mean || SPC_DATA.mean,
-    sd:   stats.sd   || SPC_DATA.sd,
-    ucl:  stats.ucl  || SPC_DATA.ucl,
-    lcl:  stats.lcl  || SPC_DATA.lcl,
-    usl:  stats.usl  || SPC_DATA.usl,
-    lsl:  stats.lsl  || SPC_DATA.lsl,
-    cp:   stats.cp   || SPC_DATA.cp  || 1.42,
-    cpk:  stats.cpk  || SPC_DATA.cpk || 1.31,
+    mean: stats.mean ?? SPC_DATA.mean,
+    sd:   stats.sd   ?? SPC_DATA.sd,
+    ucl:  stats.ucl  ?? SPC_DATA.ucl,
+    lcl:  stats.lcl  ?? SPC_DATA.lcl,
+    usl:  stats.usl  ?? SPC_DATA.usl,
+    lsl:  stats.lsl  ?? SPC_DATA.lsl,
+    cp:   stats.cp   ?? SPC_DATA.cp  ?? 1.42,
+    cpk:  stats.cpk  ?? SPC_DATA.cpk ?? 1.31,
   };
 
   const mr     = points.slice(1).map((v,i) => Math.abs(v - points[i]));
@@ -87,12 +88,12 @@ export default function LSSScreen() {
       {/* SPC Stats — in Spanish */}
       <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
         {[
-          {l:'Media (X̄)',           v:spc.mean.toFixed(2), c:'cyan'},
-          {l:'Desv. estándar (σ)',   v:spc.sd.toFixed(3),   c:'cyan'},
-          {l:'Lím. Control Sup.',    v:spc.ucl.toFixed(2),  c:'red'},
-          {l:'Lím. Control Inf.',    v:spc.lcl.toFixed(2),  c:'red'},
-          {l:'Cp',                   v:(spc.cp||1.42).toFixed(2), c:'green'},
-          {l:'Cpk',                  v:(spc.cpk||1.31).toFixed(2), c:'green'},
+          {l:'Media (X̄)',         v: spc.mean != null ? spc.mean.toFixed(2) : '—', c:'cyan'},
+          {l:'Desv. estándar (σ)', v: spc.sd   != null ? spc.sd.toFixed(3)   : '—', c:'cyan'},
+          {l:'Lím. Control Sup.', v: spc.ucl  != null ? spc.ucl.toFixed(2)  : '—', c:'red'},
+          {l:'Lím. Control Inf.', v: spc.lcl  != null ? spc.lcl.toFixed(2)  : '—', c:'red'},
+          {l:'Cp',                v: spc.cp   != null ? spc.cp.toFixed(2)   : '—', c:'green'},
+          {l:'Cpk',               v: spc.cpk  != null ? spc.cpk.toFixed(2)  : '—', c:'green'},
         ].map(k => (
           <div key={k.l} className="panel rounded p-3 corners"
                style={{color: k.c==='red'?'#EF4444':(k.c==='green'?'#10B981':'#22D3EE')}}>
@@ -108,10 +109,10 @@ export default function LSSScreen() {
       {/* KPI strip — remove DPMO and RTY */}
       <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-4 gap-3">
         {[
-          {l:'Sigma Level',  v: liveSigma ? `${liveSigma}σ` : '4.61σ',  d:'+0.08',     accent:'cyan'},
-          {l:'Yield',        v: liveYield ? `${liveYield}%` : '98.6%',   d:'+0.3%',     accent:'green'},
-          {l:'Cp / Cpk',     v: (metrics?.cp && metrics?.cpk) ? `${metrics.cp} / ${metrics.cpk}` : '1.42 / 1.31', d:'+0.04', accent:'cyan'},
-          {l:'Ahorro YTD',   v:'$182K',   d:'+$12K mes', accent:'ai'},
+          {l:'Sigma Level', v: liveSigma ? `${liveSigma}σ` : '4.61σ',  d:'+0.08',    accent:'cyan'},
+          {l:'Yield',       v: liveYield ? `${liveYield}%` : '98.6%',   d:'+0.3%',   accent:'green'},
+          {l:'Cp / Cpk',    v: `${spc.cp.toFixed(2)} / ${spc.cpk.toFixed(2)}`,        d:'+0.04', accent:'cyan'},
+          {l:'Ahorro YTD',  v: metrics?.savings ? `$${metrics.savings}` : '$182K',    d:'+$12K', accent:'ai'},
         ].map(k => (
           <div key={k.l} className="panel rounded p-3 relative overflow-hidden corners"
                style={{color: k.accent==='green'?'#10B981':(k.accent==='ai'?'#A855F7':'#22D3EE')}}>
@@ -132,18 +133,18 @@ export default function LSSScreen() {
 
         <Card title="Análisis de capacidad" subtitle="Pieza clave · diámetro inyector" className="col-span-12 xl:col-span-5" accent="ai">
           <div className="flex items-center justify-around mb-3">
-            {[{l:'Cp',v:1.42},{l:'Cpk',v:1.31},{l:'Pp',v:1.39},{l:'Ppk',v:1.27}].map(x => (
+            {[{l:'Cp',v:spc.cp},{l:'Cpk',v:spc.cpk},{l:'Pp',v:stats.pp||1.39},{l:'Ppk',v:stats.ppk||1.27}].map(x => (
               <div key={x.l} className="text-center">
-                <div className="num text-2xl text-ai-400" style={{textShadow:'0 0 14px #A855F755'}}>{x.v}</div>
+                <div className="num text-2xl text-ai-400" style={{textShadow:'0 0 14px #A855F755'}}>{typeof x.v === 'number' ? x.v.toFixed(2) : '—'}</div>
                 <div className="text-[10px] text-slate-500 uppercase tracking-widest">{x.l}</div>
               </div>
             ))}
           </div>
-          <Histogram data={SPC_DATA.points} bins={14} w={420} h={160} color="#A855F7"/>
+          <Histogram data={spc.points} bins={14} w={420} h={160} color="#A855F7"/>
           <div className="grid grid-cols-3 gap-2 mt-3 text-[10px]">
-            <div className="panel rounded p-2"><div className="text-slate-500">Lím. Inferior</div><div className="num text-warn-400">{SPC_DATA.lsl.toFixed(2)}</div></div>
-            <div className="panel rounded p-2"><div className="text-slate-500">Media (μ)</div><div className="num text-white">{SPC_DATA.mean.toFixed(2)}</div></div>
-            <div className="panel rounded p-2"><div className="text-slate-500">Lím. Superior</div><div className="num text-warn-400">{SPC_DATA.usl.toFixed(2)}</div></div>
+            <div className="panel rounded p-2"><div className="text-slate-500">Lím. Inferior</div><div className="num text-warn-400">{spc.lsl.toFixed(2)}</div></div>
+            <div className="panel rounded p-2"><div className="text-slate-500">Media (μ)</div><div className="num text-white">{spc.mean.toFixed(2)}</div></div>
+            <div className="panel rounded p-2"><div className="text-slate-500">Lím. Superior</div><div className="num text-warn-400">{spc.usl.toFixed(2)}</div></div>
           </div>
         </Card>
       </div>
@@ -171,7 +172,7 @@ export default function LSSScreen() {
           <div className="grid grid-cols-3 gap-2 mt-2 text-[11px]">
             <div className="panel rounded p-2"><div className="text-slate-500">Media (μ)</div><div className="num text-white">{spc.mean.toFixed(3)}</div></div>
             <div className="panel rounded p-2"><div className="text-slate-500">Desv. (σ)</div><div className="num text-white">{spc.sd.toFixed(3)}</div></div>
-            <div className="panel rounded p-2"><div className="text-slate-500">Asimetría</div><div className="num text-white">0.14</div></div>
+            <div className="panel rounded p-2"><div className="text-slate-500">Asimetría</div><div className="num text-white">{stats.skewness != null ? stats.skewness.toFixed(2) : '0.14'}</div></div>
           </div>
         </Card>
       </div>
@@ -185,8 +186,7 @@ export default function LSSScreen() {
                 <th className="text-left py-2 px-2">#</th>
                 <th className="text-left">Fecha/Hora</th>
                 <th className="text-left">Media (X̄)</th>
-                <th className="text-left">Rango (R)</th>
-                <th className="text-left">Desv. (σ)</th>
+                <th className="text-left">Rango móvil</th>
                 <th className="text-left">Lím. Superior</th>
                 <th className="text-left">Lím. Inferior</th>
                 <th className="text-left">Estado</th>
@@ -197,14 +197,14 @@ export default function LSSScreen() {
                 const idx  = points.length - 10 + i;
                 const ooc  = v > spc.ucl || v < spc.lcl;
                 const warn = v > spc.usl || v < spc.lsl;
+                const mrV  = idx > 0 ? Math.abs(v - points[idx - 1]) : 0;
                 const t    = new Date(Date.now() - (10-i) * 60000);
                 return (
                   <tr key={idx} className="hairline-bottom hover:bg-white/[0.02]">
                     <td className="py-1.5 px-2 num text-slate-500">{idx+1}</td>
                     <td className="num text-slate-400">{t.toLocaleTimeString()}</td>
                     <td className={`num ${ooc?'text-crit-400':warn?'text-warn-400':'text-white'}`}>{v.toFixed(3)}</td>
-                    <td className="num text-slate-300">{(Math.random()*0.4+0.1).toFixed(3)}</td>
-                    <td className="num text-slate-300">{(Math.random()*0.2+0.05).toFixed(3)}</td>
+                    <td className="num text-slate-300">{mrV.toFixed(3)}</td>
                     <td className="num text-slate-500">{spc.usl.toFixed(2)}</td>
                     <td className="num text-slate-500">{spc.lsl.toFixed(2)}</td>
                     <td>{ooc ? <Chip color="red">OOC</Chip> : warn ? <Chip color="amber">WARN</Chip> : <Chip color="green">OK</Chip>}</td>

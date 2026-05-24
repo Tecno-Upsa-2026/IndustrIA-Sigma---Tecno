@@ -12,7 +12,7 @@ const INITIAL = {
   events:      [],
   production:  [],
   simulator:   { status: 'idle', results: {}, history: [], params: {}, scenarios: [] },
-  spcData:     {},     // machineId → { points, stats }
+  spcData:     {},
   lss:         null,
   reports:     [],
   config:      null,
@@ -21,6 +21,10 @@ const INITIAL = {
   aiInsights:  [],
   aiModels:    [],
   conversations: [],
+  // CSV files uploaded once in Dashboard, shared across all screens
+  // Structure: { [machineId]: { name, header, rows } }
+  csvFiles:    {},
+  activeCsvId: null,
 };
 
 // ── Reducer ───────────────────────────────────────────────────────────────────
@@ -58,6 +62,18 @@ function reducer(state, action) {
     case 'SET_AI_INSIGHTS':   return { ...state, aiInsights:     action.v };
     case 'SET_AI_MODELS':     return { ...state, aiModels:       action.v };
     case 'SET_CONVERSATIONS': return { ...state, conversations:  action.v };
+
+    case 'ADD_CSV': {
+      const next = { ...state.csvFiles, [action.id]: action.data };
+      return { ...state, csvFiles: next, activeCsvId: action.id };
+    }
+    case 'REMOVE_CSV': {
+      const next = { ...state.csvFiles };
+      delete next[action.id];
+      const ids = Object.keys(next);
+      return { ...state, csvFiles: next, activeCsvId: ids.length ? ids[ids.length - 1] : null };
+    }
+    case 'SET_ACTIVE_CSV': return { ...state, activeCsvId: action.id };
 
     default: return state;
   }
@@ -261,12 +277,17 @@ export function DataProvider({ children }) {
       dispatch({ type: 'SET_CONVERSATIONS', v: data });
       return data;
     }, []),
-    chat: useCallback(async (message, conversationId) => {
-      const res = await api.chat({ message, conversationId });
+    chat: useCallback(async (message, conversationId, csvContext) => {
+      const res = await api.chat({ message, conversationId, ...(csvContext ? { csvContext } : {}) });
       const convs = await api.getConversations();
       dispatch({ type: 'SET_CONVERSATIONS', v: convs });
       return res;
     }, []),
+
+    // CSV — uploaded once in Dashboard, consumed everywhere
+    addCsv:      (id, data) => dispatch({ type: 'ADD_CSV',        id, data }),
+    removeCsv:   (id)       => dispatch({ type: 'REMOVE_CSV',     id }),
+    setActiveCsv:(id)       => dispatch({ type: 'SET_ACTIVE_CSV', id }),
   };
 
   return (
