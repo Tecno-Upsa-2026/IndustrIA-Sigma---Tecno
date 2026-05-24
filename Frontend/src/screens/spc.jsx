@@ -1,7 +1,6 @@
 import { useState, useMemo } from 'react'
 import { Card, Chip, PageHeader } from '../shell'
 import { ControlChart, Histogram } from '../charts'
-import { SPC_DATA } from '../data'
 import { I } from '../icons'
 import { useData } from '../context/DataContext'
 import { generatePDF } from '../lib/pdf'
@@ -85,7 +84,8 @@ export default function SPCScreen() {
   const [selCol,      setSelCol]      = useState('');
   const [exporting,   setExporting]   = useState(false);
 
-  const activeMachine = selMachine || csvMachines[0] || '';
+  const backendMachines = Object.keys(spcData);
+  const activeMachine = selMachine || csvMachines[0] || backendMachines[0] || '';
   const csvData       = csvFiles[activeMachine] || null;
   const cols          = numericCols(csvData);
   const activeCol     = selCol || cols[0] || '';
@@ -101,10 +101,10 @@ export default function SPCScreen() {
       const mr        = movingRange(vals);
       return { series, stats, wecoFlags, mr };
     }
-    // Fall back to backend INJ-07 or mock
-    const live = spcData['INJ-07'];
-    const pts  = live?.points?.map(p => ({ val: p.value, ts: null })) || SPC_DATA.points.map(v => ({ val: v, ts: null }));
-    const st   = live?.stats || { mean: SPC_DATA.mean, sd: SPC_DATA.sd, ucl: SPC_DATA.ucl, lcl: SPC_DATA.lcl, usl: SPC_DATA.usl, lsl: SPC_DATA.lsl, cp: SPC_DATA.cp, cpk: SPC_DATA.cpk, skew: 0.14, n: pts.length };
+    const live = spcData[activeMachine];
+    const pts  = live?.points?.map(p => ({ val: p.value, ts: null })) || [];
+    const st   = live?.stats || null;
+    if (!pts.length || !st) return { series: [], stats: null, wecoFlags: [], mr: [] };
     const flags = detectWECO(pts.map(p=>p.val), st.mean, st.sd);
     return { series: pts, stats: st, wecoFlags: flags, mr: movingRange(pts.map(p=>p.val)) };
   }, [csvData, activeCol, spcData]);
@@ -112,6 +112,21 @@ export default function SPCScreen() {
   const vals   = series.map(s => s.val);
   const oocIdx = vals.reduce((a,v,i) => { if (stats && (v > stats.ucl || v < stats.lcl)) a.push(i); return a; }, []);
   const wecoHitIdx = wecoFlags.reduce((a,f,i) => { if (f.length) a.push(i); return a; }, []);
+
+  if (!stats && !series.length) {
+    return (
+      <div className="p-6 space-y-5">
+        <PageHeader
+          eyebrow="// STATISTICAL PROCESS CONTROL"
+          title="SPC · Control Estadístico"
+          desc="Cartas de control X̄–MR, histogramas y detección automática de reglas WECO."
+        />
+        <Card title="Esperando datos" subtitle="Sin TICK del backend ni CSV cargado" accent="cyan">
+          <div className="text-sm text-slate-400">La vista SPC solo se alimenta de datos reales. Carga un CSV o espera el primer TICK del backend para ver la carta de control.</div>
+        </Card>
+      </div>
+    );
+  }
 
   const hasCSV = !!csvData && !!activeCol && !!stats;
 

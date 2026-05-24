@@ -95,8 +95,15 @@ export function DataProvider({ children }) {
       api.getDashboard(),
       api.getMachines(),
       api.getAlerts(),
+      api.getSPCAll(),
+      api.getLSSMetrics(),
+      api.getConfig(),
+      api.getSimulator(),
+      api.getConversations(),
+      api.getAIInsights(),
+      api.getAIModels(),
       api.getProfile(),
-    ]).then(([dash, machines, alerts, profile]) => {
+    ]).then(([dash, machines, alerts, spc, lss, config, simulator, conversations, aiInsights, aiModels, profile]) => {
       const data = {};
       if (dash.status     === 'fulfilled') Object.assign(data, dash.value);
       if (machines.status === 'fulfilled') {
@@ -105,6 +112,13 @@ export function DataProvider({ children }) {
         data.machines = map;
       }
       if (alerts.status   === 'fulfilled') data.alerts  = alerts.value;
+      if (spc.status      === 'fulfilled') data.spcData = spc.value;
+      if (lss.status      === 'fulfilled') data.lss = lss.value;
+      if (config.status   === 'fulfilled') data.config = config.value;
+      if (simulator.status=== 'fulfilled') data.simulator = { ...data.simulator, ...simulator.value };
+      if (conversations.status === 'fulfilled') data.conversations = conversations.value;
+      if (aiInsights.status === 'fulfilled') data.aiInsights = aiInsights.value;
+      if (aiModels.status === 'fulfilled') data.aiModels = aiModels.value;
       if (profile.status  === 'fulfilled') data.profile = profile.value;
       dispatch({ type: 'SEED', data });
     });
@@ -197,6 +211,11 @@ export function DataProvider({ children }) {
     resetSimulator: useCallback(async () => {
       const res = await api.resetSimulator();
       dispatch({ type: 'SET_SIMULATOR', v: res });
+    }, []),
+    optimizeSimulator: useCallback(async (body) => {
+      const res = await api.optimizeSimulator(body);
+      dispatch({ type: 'SET_SIMULATOR', v: { optimizedSetpoints: res.recommendations ?? [], optimizedMachineId: res.machineId ?? body?.machineId } });
+      return res;
     }, []),
     saveScenario: useCallback(async (body) => {
       const res = await api.saveScenario(body);

@@ -11,34 +11,36 @@ export const NAV = [
 ];
 
 export const MACHINES = [
-  { id:'CNC-04', name:'CNC Mill A4',   line:'Línea 1', status:'RUNNING',  oee:91.4, temp:68.2,  vib:0.42, rpm:8200, load:78, defect:1.4 },
-  { id:'PRS-12', name:'Hyd Press 12',  line:'Línea 1', status:'RUNNING',  oee:86.0, temp:72.6,  vib:0.55, rpm:0,    load:62, defect:2.1 },
-  { id:'INJ-07', name:'Injection 07',  line:'Línea 2', status:'WARN',     oee:74.3, temp:214.8, vib:0.71, rpm:140,  load:88, defect:4.8 },
-  { id:'WLD-02', name:'Robot Weld R2', line:'Línea 2', status:'RUNNING',  oee:93.2, temp:55.0,  vib:0.31, rpm:0,    load:54, defect:0.6 },
-  { id:'OVN-09', name:'Curing Oven 9', line:'Línea 3', status:'CRITICAL', oee:58.7, temp:248.5, vib:0.92, rpm:0,    load:97, defect:7.9 },
-  { id:'PCK-03', name:'Packing Bot 3', line:'Línea 3', status:'RUNNING',  oee:88.9, temp:34.1,  vib:0.28, rpm:1200, load:67, defect:1.0 },
-  { id:'CNV-11', name:'Conveyor 11',   line:'Línea 4', status:'IDLE',     oee:0.0,  temp:24.4,  vib:0.05, rpm:0,    load:0,  defect:0   },
-  { id:'CNC-21', name:'CNC Lathe 21',  line:'Línea 4', status:'RUNNING',  oee:84.1, temp:64.0,  vib:0.48, rpm:6400, load:71, defect:1.7 },
+  { id:'BTL-01', name:'Tanque de almacenamiento', line:'Línea 1', status:'RUNNING',  oee:96.8, temp:82.0,  vib:0.00, rpm:0,    load:85, defect:0.8 },
+  { id:'BTL-02', name:'Bomba industrial',        line:'Línea 1', status:'RUNNING',  oee:94.1, temp:84.3,  vib:0.26, rpm:0,    load:120, defect:1.2 },
+  { id:'BTL-03', name:'Llenadora automática',    line:'Línea 1', status:'WARN',     oee:89.7, temp:80.6,  vib:0.18, rpm:0,    load:120, defect:1.9 },
+  { id:'BTL-04', name:'Banda transportadora',    line:'Línea 1', status:'RUNNING',  oee:92.4, temp:24.1,  vib:0.12, rpm:0,    load:45,  defect:0.7 },
+  { id:'BTL-05', name:'Tapadora',                line:'Línea 1', status:'RUNNING',  oee:95.2, temp:25.2,  vib:0.10, rpm:0,    load:80,  defect:0.9 },
+  { id:'BTL-06', name:'Etiquetadora',            line:'Línea 1', status:'RUNNING',  oee:93.6, temp:24.8,  vib:0.09, rpm:0,    load:90,  defect:1.0 },
+  { id:'FUR-01', name:'Horno industrial',        line:'Línea 2', status:'WARN',     oee:88.4, temp:221.0, vib:0.05, rpm:0,    load:45,  defect:1.6 },
+  { id:'FUR-02', name:'Sistema de ventilación',  line:'Línea 2', status:'RUNNING',  oee:90.8, temp:35.0,  vib:0.34, rpm:1450, load:8,   defect:1.1 },
+  { id:'FUR-03', name:'Sensores térmicos',       line:'Línea 2', status:'RUNNING',  oee:92.0, temp:0.5,   vib:0.00, rpm:0,    load:0,   defect:0.4 },
+  { id:'FUR-04', name:'Controladores PID',       line:'Línea 2', status:'RUNNING',  oee:97.3, temp:218.0, vib:0.00, rpm:0,    load:0,   defect:0.2 },
 ];
 
 export const ALERTS = [
-  { id:'A-2098', sev:'CRITICAL', machine:'OVN-09', title:'Sobrecalentamiento detectado',   detail:'Temperatura 248.5°C supera límite 240°C por 4 min.', time:'14:02:11', ai:'Reducir setpoint a 230°C y verificar ventiladores 3 y 4.' },
-  { id:'A-2097', sev:'CRITICAL', machine:'INJ-07', title:'Cp cayó por debajo de 1.0',      detail:'Capability index = 0.89 en última hora.',           time:'13:58:42', ai:'Inspeccionar boquilla y temperatura de cilindro.' },
-  { id:'A-2096', sev:'HIGH',     machine:'PRS-12', title:'Vibración fuera de rango',       detail:'Vib RMS 0.55g, baseline 0.30g.',                    time:'13:51:08', ai:'Posible desbalance. Programar mantenimiento.' },
-  { id:'A-2095', sev:'HIGH',     machine:'INJ-07', title:'Drift en presión hidráulica',    detail:'7 puntos consecutivos sobre la media.',             time:'13:44:27', ai:'Regla WECO 2. Verificar bomba.' },
-  { id:'A-2094', sev:'MEDIUM',   machine:'CNC-04', title:'Consumo energético elevado',     detail:'+18% vs. baseline turno.',                          time:'13:30:00', ai:'Revisar ciclo de carga.' },
-  { id:'A-2093', sev:'MEDIUM',   machine:'WLD-02', title:'Tiempo de ciclo +6%',            detail:'Cycle time 12.4s vs target 11.7s.',                 time:'13:21:55', ai:'Optimizar trayectoria robot.' },
-  { id:'A-2092', sev:'LOW',      machine:'PCK-03', title:'Calibración pendiente',          detail:'Última calibración hace 72h.',                      time:'12:50:10', ai:'Agendar PM tier-1.' },
+  { id:'A-2098', sev:'CRITICAL', machine:'FUR-01', title:'Temperatura del horno en vigilancia', detail:'Temperatura 248.0°C supera el límite crítico.', time:'14:02:11', ai:'Reducir setpoint y revisar ventilación.' },
+  { id:'A-2097', sev:'HIGH',     machine:'BTL-03', title:'Variabilidad de llenado elevada',      detail:'El volumen de llenado presenta dispersión alta.', time:'13:58:42', ai:'Revisar boquillas y presión de impulsión.' },
+  { id:'A-2096', sev:'HIGH',     machine:'BTL-02', title:'Vibración de bomba fuera de rango',    detail:'La bomba industrial elevó su vibración sobre base.', time:'13:51:08', ai:'Inspeccionar rodamientos y acople.' },
+  { id:'A-2095', sev:'MEDIUM',   machine:'FUR-03', title:'Deriva de sensor térmico',            detail:'El sensor térmico muestra drift leve.', time:'13:44:27', ai:'Recalibrar sonda y verificar ruido.' },
+  { id:'A-2094', sev:'MEDIUM',   machine:'BTL-05', title:'Torque de tapa variable',              detail:'La tapadora requiere ajuste fino.', time:'13:30:00', ai:'Ajustar torque y validar cierre.' },
+  { id:'A-2093', sev:'LOW',      machine:'BTL-06', title:'Alineación de etiqueta pendiente',     detail:'La etiquetadora mantiene margen de mejora.', time:'13:21:55', ai:'Ajustar guía lateral.' },
+  { id:'A-2092', sev:'LOW',      machine:'BTL-04', title:'Velocidad de banda monitoreada',      detail:'La banda transportadora mantiene operación estable.', time:'12:50:10', ai:'Mantener vigilancia del ciclo.' },
 ];
 
 export const EVENTS = [
-  { t:'14:02', label:'Sobrecalentamiento OVN-09',    kind:'critical' },
-  { t:'13:58', label:'Cp INJ-07 < 1.0',              kind:'critical' },
-  { t:'13:51', label:'Vibración PRS-12',             kind:'warn' },
-  { t:'13:30', label:'Turno B inicia',               kind:'info' },
-  { t:'13:18', label:'Setpoint actualizado CNC-04',  kind:'info' },
+  { t:'14:02', label:'Temperatura FUR-01 en vigilancia', kind:'critical' },
+  { t:'13:58', label:'Variabilidad BTL-03 elevada',       kind:'critical' },
+  { t:'13:51', label:'Vibración BTL-02 fuera de rango',   kind:'warn' },
+  { t:'13:30', label:'Turno B inicia',                    kind:'info' },
+  { t:'13:18', label:'Setpoint actualizado BTL-05',       kind:'info' },
   { t:'13:02', label:'Lote #44871 cerrado · 99.1% yield', kind:'ok' },
-  { t:'12:40', label:'Modelo IA reentrenado v2.41',  kind:'ai' },
+  { t:'12:40', label:'Modelo IA reentrenado v2.41',       kind:'ai' },
 ];
 
 // Seeded RNG for stable charts

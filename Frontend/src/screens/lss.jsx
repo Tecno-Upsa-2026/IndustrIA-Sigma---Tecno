@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef } from 'react'
 import { Card, Stat, PageHeader, Chip } from '../shell'
 import { SparkLine, ParetoChart, Histogram, ControlChart } from '../charts'
-import { PARETO, ISHIKAWA, SPC_DATA } from '../data'
+import { PARETO, ISHIKAWA } from '../data'
 import { I } from '../icons'
 import { useData } from '../context/DataContext'
 import { generatePDF } from '../lib/pdf'
@@ -212,7 +212,8 @@ export default function LSSScreen() {
   const inputRef = useRef(null);
 
   const csvMachines = Object.keys(csvFiles);
-  const machineId   = selMachine || activeCsvId || csvMachines[0] || 'INJ-07';
+  const backendMachines = Object.keys(spcData);
+  const machineId   = selMachine || activeCsvId || csvMachines[0] || backendMachines[0] || '';
 
   useEffect(() => {
     actions.fetchLSS().catch(() => {});
@@ -237,7 +238,7 @@ export default function LSSScreen() {
       await generatePDF({
         elementId: 'lss-capture',
         tipo:      'LSS',
-        nombre:    `Lean Six Sigma · INJ-07 · ${new Date().toLocaleDateString('es-MX')}`,
+        nombre:    `Lean Six Sigma · ${machineId} · ${new Date().toLocaleDateString('es-MX')}`,
         autor:     'Sistema',
       });
     } catch (e) {
@@ -303,31 +304,31 @@ export default function LSSScreen() {
     : [];
   const csvSPC = computeSPCStats(csvValues);
 
-  // Priority: backend > CSV > demo
+  // Priority: backend > CSV
   const liveINJ      = spcData[machineId];
   const backendPts   = liveINJ?.points?.map(p => p.value) || [];
   const backendStats = liveINJ?.stats || {};
   const hasBackend   = backendPts.length > 0;
 
-  const points = hasBackend ? backendPts : (csvValues.length ? csvValues : SPC_DATA.points);
+  const points = hasBackend ? backendPts : csvValues;
   const hasSPC = points.length > 0;
   const usingCSV = !hasBackend && csvValues.length > 0;
 
   // Merge stats from best available source
   const src = hasBackend ? backendStats : (csvSPC || {});
-  const spc = {
+  const spc = hasSPC ? {
     points,
-    mean: src.mean   ?? SPC_DATA.mean,
-    sd:   src.sd     ?? SPC_DATA.sd,
-    ucl:  src.ucl    ?? SPC_DATA.ucl,
-    lcl:  src.lcl    ?? SPC_DATA.lcl,
-    usl:  src.usl    ?? SPC_DATA.usl,
-    lsl:  src.lsl    ?? SPC_DATA.lsl,
-    cp:   src.cp     ?? SPC_DATA.cp  ?? 1.42,
-    cpk:  src.cpk    ?? SPC_DATA.cpk ?? 1.31,
-    pp:   src.pp     ?? src.cp       ?? 1.39,
-    ppk:  src.ppk    ?? src.cpk      ?? 1.27,
-  };
+    mean: src.mean,
+    sd:   src.sd,
+    ucl:  src.ucl,
+    lcl:  src.lcl,
+    usl:  src.usl,
+    lsl:  src.lsl,
+    cp:   src.cp,
+    cpk:  src.cpk,
+    pp:   src.pp ?? src.cp,
+    ppk:  src.ppk ?? src.cpk,
+  } : null;
 
   const mr       = points.slice(1).map((v, i) => Math.abs(v - points[i]));
   const mrMean   = mr.reduce((a, b) => a + b, 0) / (mr.length || 1);
@@ -336,6 +337,21 @@ export default function LSSScreen() {
   // Live sigma/yield: prefer CSV-computed over hardcoded fallback
   const displaySigma = liveSigma ?? (usingCSV && csvSPC ? csvSPC.sigma.toFixed(2) + 'σ' : null);
   const displayYield = liveYield ?? (usingCSV && csvSPC ? csvSPC.yield.toFixed(1) + '%' : null);
+
+  if (!hasSPC || !spc) {
+    return (
+      <div id="lss-capture" className="p-6 space-y-5">
+        <PageHeader
+          eyebrow="// LEAN SIX SIGMA · SPC"
+          title="Lean Six Sigma"
+          desc="DMAIC, análisis de capacidad, Ishikawa, control estadístico y distribución — por máquina."
+        />
+        <Card title="Esperando datos" subtitle="Sin TICK del backend ni CSV cargado" accent="cyan">
+          <div className="text-sm text-slate-400">Carga un CSV o espera datos reales del backend para mostrar SPC, Pareto y DMAIC.</div>
+        </Card>
+      </div>
+    );
+  }
 
   // Pareto and Ishikawa: real CSV data when available
   const csvPareto   = activeCSV ? computeCSVPareto(activeCSV)       : null;

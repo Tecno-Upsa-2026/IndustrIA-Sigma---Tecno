@@ -31,7 +31,7 @@ function extractFromCsvRow(row) {
   };
 }
 
-// Auto-detect machine ID from filename (e.g. "INJ-07_historico.csv" → "INJ-07")
+// Auto-detect machine ID from filename (e.g. "BTL-03_historico.csv" → "BTL-03")
 function detectMachineId(fileName, machinesArr) {
   const upper = fileName.toUpperCase();
   const match = machinesArr.find(m => upper.includes(m.id.toUpperCase()));
@@ -93,7 +93,7 @@ function CSVSection({ csvEntries, activeCsvId, activeCsvData, onAdd, onSelect, o
           </div>
           <div className="text-center">
             <div className="text-slate-300 text-sm font-medium">No hay datos cargados</div>
-            <div className="text-slate-500 text-xs mt-1 max-w-xs">El nombre del archivo debe incluir el ID de la máquina (ej: INJ-07_historico.csv). Todos los demás screens leerán de este CSV.</div>
+            <div className="text-slate-500 text-xs mt-1 max-w-xs">El nombre del archivo debe incluir el ID de la máquina (ej: BTL-03_historico.csv). Todos los demás screens leerán de este CSV.</div>
           </div>
           <button onClick={() => fileRef.current?.click()}
                   className="flex items-center gap-2 px-4 py-2 text-xs rounded-md bg-cyan2-400/15 border border-cyan2-400/40 text-cyan2-400 hover:bg-cyan2-400/25 transition">
@@ -239,6 +239,15 @@ function MachineMini({ m, selected, onSelect, hasCSV }) {
         <StatusDot status={m.status}/>
       </div>
       <div className="text-[10px] text-slate-500 mb-2">{m.line} · {s.txt}</div>
+      <div className="mb-2">
+        <div className="flex items-center justify-between text-[9px] uppercase tracking-widest text-slate-500">
+          <span>Anomaly</span>
+          <span className="num" style={{color: (m.anomalyScore || 0) > 0.7 ? '#EF4444' : ((m.anomalyScore || 0) > 0.4 ? '#F59E0B' : '#10B981')}}>{((m.anomalyScore || 0) * 100).toFixed(0)}%</span>
+        </div>
+        <div className="h-1.5 rounded bg-slate-700/40 overflow-hidden mt-1">
+          <div className="h-full rounded" style={{width:`${Math.min(100, (m.anomalyScore || 0) * 100)}%`, background:(m.anomalyScore || 0) > 0.7 ? '#EF4444' : ((m.anomalyScore || 0) > 0.4 ? '#F59E0B' : '#10B981')}}/>
+        </div>
+      </div>
       <div className="flex items-end justify-between">
         <div>
           <div className="text-[9px] uppercase tracking-widest text-slate-500">OEE</div>
@@ -364,7 +373,7 @@ export default function Dashboard() {
   const { machines: machinesMap, csvFiles, activeCsvId, aiInsights, actions } = useData();
   const isBackendConnected = Object.keys(machinesMap).length > 0;
 
-  const [selectedMachine, setSelectedMachine] = useState('INJ-07');
+  const [selectedMachine, setSelectedMachine] = useState('BTL-03');
   const [params, setParams] = useState({ temp:204, speed:78, pressure:124, vibration:0.42, torque:214 });
   const [simMachines, setSimMachines] = useState(MOCK_MACHINES);
 

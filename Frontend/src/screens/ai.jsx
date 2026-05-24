@@ -9,9 +9,9 @@ export default function AIScreen(){
   const [messages, setMessages] = useState([
     { role:'system', t:'Copiloto IA inicializado · contexto: planta MX-01, último turno B' },
     { role:'ai',     t:'Hola Luis. Detecté 3 anomalías relevantes en las últimas 2h.', meta:[
-      {l:'Vibración PRS-12', v:'+14%', c:'amber'},
-      {l:'Cp INJ-07', v:'0.89', c:'red'},
-      {l:'Temperatura OVN-09', v:'248.5°C', c:'red'},
+      {l:'Vibración BTL-03', v:'+14%', c:'amber'},
+      {l:'Cp BTL-03', v:'0.89', c:'red'},
+      {l:'Temperatura FUR-01', v:'248.5°C', c:'red'},
     ]},
   ]);
   const [input,    setInput]    = useState('');
@@ -89,7 +89,7 @@ export default function AIScreen(){
 
             <div className="mt-3 flex gap-2 flex-wrap">
               {[
-                '¿Por qué cayó el Cp de INJ-07?',
+                '¿Por qué cayó el Cp de BTL-03?',
                 'Predice fallas en próximas 4h',
                 'Genera reporte DMAIC',
                 'Compara turnos A vs B',
@@ -155,9 +155,9 @@ export default function AIScreen(){
 }
 
 const FALLBACK_INSIGHTS = [
-  {tag:'PATRÓN',     c:'cyan',  t:'Vibración PRS-12 sube los lunes 8–10am.',                  ago:'21m'},
-  {tag:'CORRELACIÓN',c:'ai',    t:'Cp INJ-07 correlaciona 0.78 con humedad ambiente.',          ago:'14m'},
-  {tag:'ANOMALÍA',   c:'red',   t:'Pico térmico OVN-09 fuera de baseline 6σ.',                 ago:'7m'},
+  {tag:'PATRÓN',     c:'cyan',  t:'Vibración BTL-03 sube los lunes 8–10am.',                  ago:'21m'},
+  {tag:'CORRELACIÓN',c:'ai',    t:'Cp BTL-03 correlaciona 0.78 con humedad ambiente.',          ago:'14m'},
+  {tag:'ANOMALÍA',   c:'red',   t:'Pico térmico FUR-01 fuera de baseline 6σ.',                 ago:'7m'},
   {tag:'OPORTUNIDAD',c:'green', t:'Ahorro estimado $1.2K/día reduciendo speed -5%.',            ago:'35m'},
 ];
 

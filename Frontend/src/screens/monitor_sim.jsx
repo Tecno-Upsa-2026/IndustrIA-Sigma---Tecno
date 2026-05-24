@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Card, Chip, PageHeader, StatusDot } from '../shell'
 import { LiveWave } from '../charts'
-import { MACHINES as MOCK_MACHINES } from '../data'
 import { I } from '../icons'
 import { useData } from '../context/DataContext'
 
@@ -115,11 +114,11 @@ function AISuggestion({ params, result }) {
 // ─── Main screen ──────────────────────────────────────────────────────────────
 export default function MonitorSimScreen() {
   const { machines: machinesMap, csvFiles } = useData();
-  const machinesArr = Object.keys(machinesMap).length ? Object.values(machinesMap) : MOCK_MACHINES;
+  const machinesArr = Object.values(machinesMap);
 
   const [selected, setSelected] = useState(() => {
     const withCsv = machinesArr.find(m => csvFiles[m.id]);
-    return withCsv?.id || machinesArr[0]?.id || 'INJ-07';
+    return withCsv?.id || machinesArr[0]?.id || 'BTL-03';
   });
   const [params, setParams] = useState({ temp:204, speed:78, pressure:124, vibration:0.42, torque:214 });
 
@@ -163,6 +162,11 @@ export default function MonitorSimScreen() {
       />
 
       {/* Machine selector */}
+      {machinesArr.length === 0 && (
+        <Card title="Esperando backend" subtitle="Sin máquinas en TICK todavía" accent="cyan">
+          <div className="text-sm text-slate-400">Este simulador usa datos reales del backend en producción. Cuando llegue el estado inicial aparecerán las máquinas disponibles.</div>
+        </Card>
+      )}
       <div className="flex gap-2 flex-wrap">
         {machinesArr.map(m => {
           const isSel  = m.id === selected;

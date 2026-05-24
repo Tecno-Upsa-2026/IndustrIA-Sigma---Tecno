@@ -85,6 +85,7 @@ export const api = {
   // ── Simulator ──────────────────────────────────────────────────────────────
   getSimulator:          ()         => req('GET',    '/simulator'),
   updateSimParams:       (body)     => req('PATCH',  '/simulator/params', body),
+  optimizeSimulator:     (body)     => req('POST',   '/simulator/optimize', body),
   runSimulator:          ()         => req('POST',   '/simulator/run'),
   stopSimulator:         ()         => req('POST',   '/simulator/stop'),
   resetSimulator:        ()         => req('POST',   '/simulator/reset'),

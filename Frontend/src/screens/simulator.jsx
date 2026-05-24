@@ -10,6 +10,9 @@ export default function SimulatorScreen(){
     temp:204, speed:78, pressure:124, vibration:0.42, torque:214,
     ...simulator.params
   });
+  const [optimization, setOptimization] = useState(null);
+  const [optimizing, setOptimizing] = useState(false);
+  const [optError, setOptError] = useState('');
   const [tick, setTick] = useState(0);
 
   const running = simulator.status === 'running';
@@ -39,6 +42,21 @@ export default function SimulatorScreen(){
   const handleReset = async () => {
     await actions.resetSimulator().catch(()=>{});
     setLocalParams({ temp:204, speed:78, pressure:124, vibration:0.42, torque:214 });
+    setOptimization(null);
+    setOptError('');
+  };
+
+  const handleOptimize = async () => {
+    setOptimizing(true);
+    setOptError('');
+    try {
+      const res = await actions.optimizeSimulator({ machineId: 'BTL-03' });
+      setOptimization(res);
+    } catch (error) {
+      setOptError(error?.message || 'No se pudo calcular la optimización.');
+    } finally {
+      setOptimizing(false);
+    }
   };
 
   const scenarios = simulator.scenarios || [];
@@ -55,13 +73,15 @@ export default function SimulatorScreen(){
               {running?I.pause:I.play} {running?'Pausar':'Reanudar'}
             </button>
             <button onClick={handleReset} className="panel rounded-md px-3 py-2 text-xs text-slate-300 hairline flex items-center gap-2 hover:text-cyan2-400">{I.refresh} Reset</button>
-            <button className="px-3 py-2 text-xs rounded-md bg-cyan2-400/15 border border-cyan2-400/40 text-cyan2-400 flex items-center gap-2">{I.bolt} Aplicar a INJ-07</button>
+            <button onClick={handleOptimize} disabled={optimizing} className="px-3 py-2 text-xs rounded-md bg-cyan2-400/15 border border-cyan2-400/40 text-cyan2-400 flex items-center gap-2 disabled:opacity-60">
+              {I.bolt} {optimizing ? 'Optimizando…' : 'Optimizar BTL-03'}
+            </button>
           </div>
         }
       />
 
       <div className="grid grid-cols-12 gap-4">
-        <Card title="Variables de proceso" subtitle="Setpoints · INJ-07 Injection Line 2" className="col-span-12 xl:col-span-4" accent="cyan">
+        <Card title="Variables de proceso" subtitle="Setpoints · BTL-03 Línea de llenado" className="col-span-12 xl:col-span-4" accent="cyan">
           <div className="space-y-4">
             <Slider label="Temperatura" unit="°C"  min={150} max={260} step={1}    ideal={200} value={localParams.temp}      onChange={v=>handleParamChange('temp',v)}/>
             <Slider label="Velocidad"   unit="%"   min={0}   max={100} step={1}    ideal={70}  value={localParams.speed}     onChange={v=>handleParamChange('speed',v)}/>
@@ -80,7 +100,7 @@ export default function SimulatorScreen(){
           </div>
         </Card>
 
-        <Card title="Gemelo digital · INJ-07" subtitle={`tick ${tick} · ${running?'RUNNING':'PAUSED'}`} className="col-span-12 xl:col-span-5" accent="cyan">
+        <Card title="Gemelo digital · BTL-03" subtitle={`tick ${tick} · ${running?'RUNNING':'PAUSED'}`} className="col-span-12 xl:col-span-5" accent="cyan">
           <DigitalTwin params={localParams} defectRate={r.defect||0} tick={tick}/>
         </Card>
 
@@ -104,6 +124,27 @@ export default function SimulatorScreen(){
                 Modelo <span className="text-ai-400 num">XGBoost-v2.41</span> entrenado con <span className="num">1.2M</span> registros. Última inferencia: hace 320ms.
               </div>
             </div>
+          </Card>
+
+          <Card title="Optimización" subtitle="BTL-03 · top 3 recomendaciones" accent="cyan">
+            {optError && <div className="text-xs text-crit-400 mb-2">{optError}</div>}
+            {!optimization && !optError && <div className="text-xs text-slate-400">Pulsa Optimizar para buscar setpoints con menor defecto y mejor OEE.</div>}
+            {optimization?.recommendations?.length ? (
+              <div className="space-y-2">
+                {optimization.recommendations.map((rec, index) => (
+                  <div key={index} className="panel rounded p-2">
+                    <div className="flex items-center justify-between text-[10px] text-slate-500 uppercase tracking-widest">
+                      <span>Opción {index + 1}</span>
+                      <span className="num">cost {rec.cost.toFixed(3)}</span>
+                    </div>
+                    <div className="text-xs text-white mt-1">Defecto {rec.defect.toFixed(2)}% · OEE {rec.oee.toFixed(1)}%</div>
+                    <div className="text-[10px] text-slate-400 mt-1">
+                      {Object.entries(rec.params).map(([key, value]) => `${key}: ${Number(value).toFixed(2)}`).join(' · ')}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : null}
           </Card>
         </div>
       </div>

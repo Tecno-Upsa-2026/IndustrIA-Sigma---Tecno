@@ -1,15 +1,14 @@
 import { useState } from 'react'
 import { Card, Chip, PageHeader, StatusDot } from '../shell'
 import { Gauge, LiveWave } from '../charts'
-import { MACHINES as MOCK_MACHINES } from '../data'
 import { I } from '../icons'
 import { useData } from '../context/DataContext'
 
 export default function MonitoringScreen(){
   const { machines: machinesMap } = useData();
-  const machinesArr = Object.keys(machinesMap).length ? Object.values(machinesMap) : MOCK_MACHINES;
+  const machinesArr = Object.values(machinesMap);
 
-  const [selected, setSelected] = useState('INJ-07');
+  const [selected, setSelected] = useState('BTL-03');
   const machine = machinesArr.find(m=>m.id===selected) || machinesArr[0];
 
   return (
@@ -28,7 +27,12 @@ export default function MonitoringScreen(){
       />
 
       <div className="grid grid-cols-12 gap-4">
-        <Card title="Topología de planta" subtitle="Querétaro MX-01 · 4 líneas · 28 nodos" className="col-span-12 xl:col-span-8" accent="cyan">
+        {machinesArr.length === 0 && (
+          <Card title="Esperando backend" subtitle="Sin datos en TICK todavía" className="col-span-12" accent="cyan">
+            <div className="text-sm text-slate-400">La vista de monitoreo se alimenta solo del backend en producción. Cuando llegue el primer TICK aparecerán las máquinas reales.</div>
+          </Card>
+        )}
+        <Card title="Topología de planta" subtitle="Querétaro MX-01 · 2 líneas · 10 submáquinas" className="col-span-12 xl:col-span-8" accent="cyan">
           <PlantTopology selected={selected} onSelect={setSelected} machines={machinesArr}/>
           <div className="grid grid-cols-4 gap-2 mt-3">
             {[
@@ -100,7 +104,7 @@ export default function MonitoringScreen(){
             {id:'H-601', n:'Humedad',     v:'34.2',  u:'%',   c:'#3B82F6', s:'OK'},
             {id:'C-712', n:'CO₂',         v:'0.04',  u:'%',   c:'#10B981', s:'OK'},
             {id:'A-822', n:'Acústica',    v:'82.1',  u:'dB',  c:'#22D3EE', s:'OK'},
-            {id:'T-902', n:'Temp Horno',  v:(machinesMap['OVN-09']?.temp||248.5).toFixed(1), u:'°C', c:'#EF4444', s:'CRIT'},
+            {id:'T-902', n:'Temp Horno',  v:(machinesMap['FUR-01']?.temp||221.0).toFixed(1), u:'°C', c:'#EF4444', s:'CRIT'},
             {id:'P-913', n:'Presión H',   v:'88.4',  u:'bar', c:'#3B82F6', s:'OK'},
             {id:'V-018', n:'Vib X-Axis',  v:'0.42',  u:'g',   c:'#22D3EE', s:'OK'},
             {id:'O-128', n:'O₂',          v:'20.9',  u:'%',   c:'#10B981', s:'OK'},
@@ -129,21 +133,21 @@ function PlantTopology({ selected, onSelect, machines }){
   const machineMap = Object.fromEntries((machines||[]).map(m=>[m.id,m]));
   const nodes = [
     { id:'IN',     x: 80,  y: 200, kind:'io', label:'Materia prima' },
-    { id:'CNC-04', x: 200, y: 120, kind:'m',  label:'CNC A4' },
-    { id:'CNC-21', x: 200, y: 280, kind:'m',  label:'CNC L21' },
-    { id:'PRS-12', x: 340, y: 120, kind:'m',  label:'Press 12' },
-    { id:'WLD-02', x: 340, y: 280, kind:'m',  label:'Robot R2' },
-    { id:'INJ-07', x: 480, y: 200, kind:'m',  label:'Injection 07' },
-    { id:'OVN-09', x: 620, y: 200, kind:'m',  label:'Oven 9' },
-    { id:'PCK-03', x: 760, y: 200, kind:'m',  label:'Pack 3' },
-    { id:'OUT',    x: 880, y: 200, kind:'io', label:'Almacén' },
+    { id:'BTL-01', x: 200, y: 80,  kind:'m',  label:'Tanque' },
+    { id:'BTL-02', x: 320, y: 120, kind:'m',  label:'Bomba' },
+    { id:'BTL-03', x: 440, y: 200, kind:'m',  label:'Llenadora' },
+    { id:'BTL-04', x: 560, y: 120, kind:'m',  label:'Banda' },
+    { id:'BTL-05', x: 680, y: 200, kind:'m',  label:'Tapadora' },
+    { id:'BTL-06', x: 800, y: 120, kind:'m',  label:'Etiquetadora' },
+    { id:'FUR-01', x: 320, y: 300, kind:'m',  label:'Horno' },
+    { id:'FUR-02', x: 480, y: 300, kind:'m',  label:'Ventilación' },
+    { id:'FUR-03', x: 640, y: 300, kind:'m',  label:'Sensores' },
+    { id:'FUR-04', x: 800, y: 300, kind:'m',  label:'PID' },
+    { id:'OUT',    x: 920, y: 200, kind:'io', label:'Almacén' },
   ];
   const links = [
-    ['IN','CNC-04'], ['IN','CNC-21'],
-    ['CNC-04','PRS-12'], ['CNC-21','WLD-02'],
-    ['PRS-12','INJ-07'], ['WLD-02','INJ-07'],
-    ['INJ-07','OVN-09'], ['OVN-09','PCK-03'],
-    ['PCK-03','OUT'],
+    ['IN','BTL-01'], ['BTL-01','BTL-02'], ['BTL-02','BTL-03'], ['BTL-03','BTL-04'], ['BTL-04','BTL-05'], ['BTL-05','BTL-06'], ['BTL-06','OUT'],
+    ['IN','FUR-01'], ['FUR-01','FUR-02'], ['FUR-02','FUR-03'], ['FUR-03','FUR-04'], ['FUR-04','OUT'],
   ];
   const nodeMap = Object.fromEntries(nodes.map(n=>[n.id,n]));
   return (
