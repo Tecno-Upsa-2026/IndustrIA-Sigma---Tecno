@@ -18,11 +18,10 @@ export default function ConfigScreen(){
   const users       = liveUsers.length  ? liveUsers  : FALLBACK_USERS;
 
   const tabs = [
-    {id:'machines', l:'Máquinas',     ic:I.cpu},
-    {id:'spc',      l:'Límites SPC',  ic:I.chart},
-    {id:'users',    l:'Usuarios',     ic:I.user},
-    {id:'variables',l:'Variables',    ic:I.layers},
-    {id:'sims',     l:'Simulaciones', ic:I.beaker},
+    {id:'machines', l:'Máquinas',    ic:I.cpu},
+    {id:'spc',      l:'Límites SPC', ic:I.chart},
+    {id:'users',    l:'Usuarios',    ic:I.user},
+    {id:'variables',l:'Variables',   ic:I.layers},
   ];
 
   return (
@@ -46,7 +45,6 @@ export default function ConfigScreen(){
       {tab==='spc'       && <SPCConfig wecoRules={wecoRules} spcLimits={spcLimits} onToggleWECO={actions.toggleWECO}/>}
       {tab==='users'     && <UsersConfig users={users} onInvite={actions.inviteUser} onDelete={actions.deleteUser}/>}
       {tab==='variables' && <VariablesConfig/>}
-      {tab==='sims'      && <SimsConfig/>}
     </div>
   );
 }

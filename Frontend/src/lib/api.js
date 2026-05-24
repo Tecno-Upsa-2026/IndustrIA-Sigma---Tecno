@@ -1,13 +1,43 @@
-// REST client — all calls go through Vite's /api proxy → localhost:3001
-const BASE = '/api';
+import { auth } from './auth';
 
-async function req(method, path, body) {
+const BASE = import.meta.env.VITE_API_BASE ?? '/api';
+
+async function _doRefresh() {
+  try {
+    const rt = auth.getRefresh();
+    const res = await fetch(`${BASE}/auth/refresh`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refreshToken: rt }),
+    });
+    if (!res.ok) { auth.clearTokens(); return false; }
+    auth.setTokens(await res.json());
+    return true;
+  } catch {
+    auth.clearTokens();
+    return false;
+  }
+}
+
+async function req(method, path, body, _retry = false) {
+  const token = auth.getAccess();
   const opts = {
     method,
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
   };
   if (body !== undefined) opts.body = JSON.stringify(body);
+
   const res = await fetch(`${BASE}${path}`, opts);
+
+  // Auto-refresh on 401 and retry once
+  if (res.status === 401 && !_retry && auth.hasRefresh()) {
+    const ok = await _doRefresh();
+    if (ok) return req(method, path, body, true);
+  }
+
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }));
     throw Object.assign(new Error(err.error || res.statusText), { status: res.status });
@@ -16,6 +46,12 @@ async function req(method, path, body) {
 }
 
 export const api = {
+  // ── Auth ───────────────────────────────────────────────────────────────────
+  login:                 (body)     => req('POST',   '/auth/login', body),
+  refresh:               (body)     => req('POST',   '/auth/refresh', body),
+  logout:                ()         => req('POST',   '/auth/logout'),
+  changePassword:        (body)     => req('PATCH',  '/auth/password', body),
+
   // ── Dashboard ──────────────────────────────────────────────────────────────
   getDashboard:          ()         => req('GET',    '/dashboard'),
   getProduction:         (range)    => req('GET',    `/dashboard/production?range=${range}`),
@@ -91,9 +127,4 @@ export const api = {
   getAPITokens:          ()         => req('GET',    '/profile/api-tokens'),
   createAPIToken:        (body)     => req('POST',   '/profile/api-tokens', body),
   deleteAPIToken:        (id)       => req('DELETE', `/profile/api-tokens/${id}`),
-
-  // ── Auth ───────────────────────────────────────────────────────────────────
-  login:                 (body)     => req('POST',   '/auth/login', body),
-  logout:                ()         => req('POST',   '/auth/logout'),
-  changePassword:        (body)     => req('PATCH',  '/auth/password', body),
 };

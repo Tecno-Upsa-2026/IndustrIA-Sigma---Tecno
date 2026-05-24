@@ -1,38 +1,53 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { DataProvider } from './context/DataContext'
 import { Sidebar, Topbar } from './shell'
 import { I } from './icons'
 import LoginScreen from './screens/login'
 import Dashboard from './screens/dashboard'
-import MonitoringScreen from './screens/monitoring'
-import SimulatorScreen from './screens/simulator'
+import MonitorSimScreen from './screens/monitor_sim'
 import LSSScreen from './screens/lss'
-import SPCScreen from './screens/spc'
-import AIScreen from './screens/ai'
-import AlertsScreen from './screens/alerts'
+import AIAlertsScreen from './screens/ai_alerts'
 import ReportsScreen from './screens/reports'
 import ConfigScreen from './screens/config'
 import ProfileScreen from './screens/profile'
+import ErrorBoundary from './components/ErrorBoundary'
+import { api } from './lib/api'
+import { auth } from './lib/auth'
 
 export default function App(){
-  const [authed, setAuthed] = useState(false);
-  const [route,  setRoute]  = useState('dashboard');
+  const [authed,  setAuthed]  = useState(false);
+  const [authReady, setAuthReady] = useState(false);
+  const [route,   setRoute]   = useState('dashboard');
+
+  // Attempt silent token refresh on startup so a page reload doesn't force re-login
+  useEffect(() => {
+    if (!auth.hasRefresh()) { setAuthReady(true); return; }
+    api.refresh({ refreshToken: auth.getRefresh() })
+      .then(data => { auth.setTokens(data); setAuthed(true); })
+      .catch(() => { auth.clearTokens(); })
+      .finally(() => setAuthReady(true));
+  }, []);
+
+  if (!authReady) return null; // brief blank while checking stored token
 
   if(!authed){
     return <LoginScreen onLogin={()=>setAuthed(true)}/>;
   }
 
+  function handleLogout(){
+    api.logout().catch(()=>{});
+    auth.clearTokens();
+    setAuthed(false);
+  }
+
   const screens = {
-    dashboard: { c: Dashboard,         crumb:'IndustrIA Σ / Overview',     title:'Dashboard' },
-    monitor:   { c: MonitoringScreen,  crumb:'IndustrIA Σ / Overview',     title:'Monitoreo Real-Time' },
-    simulator: { c: SimulatorScreen,   crumb:'IndustrIA Σ / Process',      title:'Simulador' },
-    lss:       { c: LSSScreen,         crumb:'IndustrIA Σ / Process',      title:'Lean Six Sigma' },
-    spc:       { c: SPCScreen,         crumb:'IndustrIA Σ / Process',      title:'SPC' },
-    ai:        { c: AIScreen,          crumb:'IndustrIA Σ / Intelligence', title:'IA Industrial' },
-    alerts:    { c: AlertsScreen,      crumb:'IndustrIA Σ / Intelligence', title:'Alertas' },
-    reports:   { c: ReportsScreen,     crumb:'IndustrIA Σ / Admin',        title:'Reportes' },
-    config:    { c: ConfigScreen,      crumb:'IndustrIA Σ / Admin',        title:'Configuración' },
-    profile:   { c: ProfileScreen,     crumb:'IndustrIA Σ / Admin',        title:'Perfil' },
+    dashboard:   { c: Dashboard,        crumb:'IndustrIA Σ / Overview',     title:'Dashboard' },
+    monitor_sim: { c: MonitorSimScreen, crumb:'IndustrIA Σ / Overview',     title:'Monitoreo y Simulación' },
+    lss:         { c: LSSScreen,        crumb:'IndustrIA Σ / Análisis',     title:'Lean Six Sigma' },
+    ai_alerts:   { c: AIAlertsScreen,   crumb:'IndustrIA Σ / Inteligencia', title:'IA + Alertas' },
+    reports:     { c: ReportsScreen,    crumb:'IndustrIA Σ / Admin',        title:'Reportes' },
+    config:      { c: ConfigScreen,     crumb:'IndustrIA Σ / Admin',        title:'Configuración' },
+    profile:     { c: ProfileScreen,    crumb:'IndustrIA Σ / Admin',        title:'Perfil' },
   };
   const cur = screens[route] || screens.dashboard;
   const C   = cur.c;
@@ -48,9 +63,11 @@ export default function App(){
       <Sidebar active={route} onNavigate={setRoute}/>
 
       <main className="flex-1 min-w-0 flex flex-col relative ml-[248px]">
-        <Topbar title={cur.title} breadcrumb={cur.crumb} onLogout={()=>setAuthed(false)}/>
+        <Topbar title={cur.title} breadcrumb={cur.crumb} onLogout={handleLogout} onNavigate={setRoute}/>
         <div className="flex-1 overflow-y-auto relative">
-          <C/>
+          <ErrorBoundary key={route}>
+            <C/>
+          </ErrorBoundary>
         </div>
         <footer className="hairline-top px-6 py-2 flex items-center justify-between text-[10px] text-slate-500 num panel-strong relative z-10">
           <div className="flex items-center gap-4">

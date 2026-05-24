@@ -171,27 +171,11 @@ export function Sidebar({ active, onNavigate }){
         ))}
       </nav>
 
-      {/* Footer */}
-      <div className="px-3 py-3 hairline-top">
-        <div className="panel rounded-md p-3 relative overflow-hidden">
-          <div className="absolute inset-0 grid-bg-sm opacity-30"/>
-          <div className="relative">
-            <div className="flex items-center gap-2">
-              <span className="text-ai-400">{I.brain}</span>
-              <div className="text-xs text-white font-medium">Modelo IA v2.41</div>
-            </div>
-            <div className="text-[10px] text-slate-500 mt-1">Última inferencia: hace 2s</div>
-            <div className="mt-2 h-1 rounded bg-slate-700/50 overflow-hidden">
-              <div className="h-full bg-gradient-to-r from-ai-400 to-cyan2-400 w-3/4" style={{boxShadow:'0 0 8px #A855F7'}}/>
-            </div>
-          </div>
-        </div>
-      </div>
     </aside>
   );
 }
 
-export function Topbar({ title, breadcrumb, onLogout }){
+export function Topbar({ title, breadcrumb, onLogout, onNavigate }){
   const [time,setTime] = useState(new Date());
   useEffect(()=>{ const id=setInterval(()=>setTime(new Date()),1000); return ()=>clearInterval(id); },[]);
   const fmt = (n)=> String(n).padStart(2,'0');
@@ -203,29 +187,15 @@ export function Topbar({ title, breadcrumb, onLogout }){
         <div className="font-display text-white text-lg font-semibold tracking-wide">{title}</div>
       </div>
 
-      <div className="flex-1 max-w-md mx-auto">
-        <div className="flex items-center gap-2 panel rounded-md px-3 py-1.5 hairline">
-          <span className="text-slate-500">{I.search}</span>
-          <input className="bg-transparent outline-none flex-1 text-sm placeholder:text-slate-500" placeholder="Buscar máquinas, lotes, alertas, KPIs…"/>
-          <span className="kbd">⌘K</span>
-        </div>
-      </div>
+      <div className="flex-1"/>
 
       <div className="flex items-center gap-3">
-        <div className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded panel hairline">
-          <span className="w-1.5 h-1.5 rounded-full bg-grind-400 pulse-dot"/>
-          <span className="text-[11px] tracking-wide text-slate-300">LIVE</span>
-          <span className="text-[11px] num text-slate-500 ml-1">42ms</span>
-        </div>
         <div className="hidden md:flex flex-col items-end leading-tight">
           <div className="num text-[15px] text-white">{fmt(time.getHours())}:{fmt(time.getMinutes())}:{fmt(time.getSeconds())}</div>
           <div className="text-[10px] text-slate-500">UTC-6 · Turno B</div>
         </div>
-        <button className="relative w-9 h-9 panel rounded-md grid place-items-center text-slate-300 hover:text-cyan2-400 hairline">
-          {I.bell}
-          <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-crit-400 text-[9px] grid place-items-center text-white num" style={{boxShadow:'0 0 10px #EF4444'}}>7</span>
-        </button>
-        <div className="flex items-center gap-2 panel rounded-md px-2 py-1 hairline">
+        <button onClick={()=>onNavigate?.('profile')}
+                className="flex items-center gap-2 panel rounded-md px-2 py-1 hairline hover:border-cyan2-400/30 transition">
           <div className="w-7 h-7 rounded grid place-items-center text-white text-xs font-semibold"
                style={{background:'linear-gradient(135deg,#22D3EE,#A855F7)'}}>LM</div>
           <div className="leading-tight">
@@ -233,7 +203,7 @@ export function Topbar({ title, breadcrumb, onLogout }){
             <div className="text-[10px] text-slate-500">Plant Engineer</div>
           </div>
           <span className="text-slate-500">{I.caret}</span>
-        </div>
+        </button>
         <button onClick={onLogout} className="text-slate-500 hover:text-crit-400" title="Salir">{I.power}</button>
       </div>
     </header>

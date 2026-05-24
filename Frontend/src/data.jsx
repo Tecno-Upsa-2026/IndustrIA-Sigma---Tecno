@@ -1,16 +1,13 @@
 import { I } from './icons'
 
 export const NAV = [
-  { id:'dashboard', label:'Dashboard',           icon: I.grid,     group:'OVERVIEW' },
-  { id:'monitor',   label:'Monitoreo Real-Time',  icon: I.pulse,    group:'OVERVIEW' },
-  { id:'simulator', label:'Simulador',            icon: I.cpu,      group:'PROCESS' },
-  { id:'lss',       label:'Lean Six Sigma',       icon: I.beaker,   group:'PROCESS' },
-  { id:'spc',       label:'SPC',                  icon: I.chart,    group:'PROCESS' },
-  { id:'ai',        label:'IA Industrial',        icon: I.brain,    group:'INTELLIGENCE' },
-  { id:'alerts',    label:'Alertas',              icon: I.bell,     group:'INTELLIGENCE', badge:'7' },
-  { id:'reports',   label:'Reportes',             icon: I.doc,      group:'ADMIN' },
-  { id:'config',    label:'Configuración',        icon: I.settings, group:'ADMIN' },
-  { id:'profile',   label:'Perfil',               icon: I.user,     group:'ADMIN' },
+  { id:'dashboard',   label:'Dashboard',              icon: I.grid,     group:'OVERVIEW' },
+  { id:'monitor_sim', label:'Monitoreo y Simulación', icon: I.pulse,    group:'OVERVIEW' },
+  { id:'lss',         label:'Lean Six Sigma',         icon: I.beaker,   group:'ANÁLISIS' },
+  { id:'ai_alerts',   label:'IA + Alertas',           icon: I.brain,    group:'INTELIGENCIA', badge:'7' },
+  { id:'reports',     label:'Reportes',               icon: I.doc,      group:'ADMIN' },
+  { id:'config',      label:'Configuración',          icon: I.settings, group:'ADMIN' },
+  { id:'profile',     label:'Perfil',                 icon: I.user,     group:'ADMIN' },
 ];
 
 export const MACHINES = [

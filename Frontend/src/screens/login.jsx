@@ -1,17 +1,29 @@
 import { useState } from 'react'
 import { Particles, Chip } from '../shell'
 import { I } from '../icons'
+import { api } from '../lib/api'
+import { auth } from '../lib/auth'
 
 export default function LoginScreen({ onLogin }){
   const [user,    setUser]    = useState('l.mendoza@nexus.io');
-  const [pass,    setPass]    = useState('••••••••••');
+  const [pass,    setPass]    = useState('demo1234');
   const [loading, setLoading] = useState(false);
   const [show,    setShow]    = useState(false);
+  const [error,   setError]   = useState('');
 
-  function submit(e){
+  async function submit(e){
     e.preventDefault();
     setLoading(true);
-    setTimeout(()=>{ setLoading(false); onLogin(); }, 1200);
+    setError('');
+    try {
+      const data = await api.login({ email: user, password: pass });
+      auth.setTokens(data);
+      onLogin(data.user);
+    } catch (err) {
+      setError(err.message || 'Credenciales incorrectas');
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
@@ -134,6 +146,9 @@ export default function LoginScreen({ onLogin }){
                   <a className="text-cyan2-400 hover:underline" href="#">Token de respaldo</a>
                 </div>
 
+                {error && (
+                  <div className="rounded-md px-3 py-2 text-xs text-crit-400 bg-crit-400/10 border border-crit-400/30 num">{error}</div>
+                )}
                 <button type="submit" disabled={loading} className="relative w-full mt-2 py-3 rounded-md font-semibold text-[#06080F] overflow-hidden group">
                   <span className="absolute inset-0" style={{background:'linear-gradient(90deg,#22D3EE,#3B82F6,#A855F7)'}}/>
                   <span className="absolute inset-0 opacity-60 sweep"/>

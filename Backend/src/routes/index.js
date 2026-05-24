@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { requireAuth } from '../middleware/auth.js';
 import auth       from './auth.js';
 import dashboard  from './dashboard.js';
 import machines   from './machines.js';
@@ -14,7 +15,13 @@ import profile    from './profile.js';
 
 const router = Router();
 
-router.use('/auth',      auth);
+// Public routes (no token required)
+router.use('/auth',   auth);
+router.get('/health', (_, res) => res.json({ ok: true, ts: Date.now() }));
+
+// All routes below require a valid JWT
+router.use(requireAuth);
+
 router.use('/dashboard', dashboard);
 router.use('/machines',  machines);
 router.use('/alerts',    alerts);
@@ -26,8 +33,5 @@ router.use('/config',    config);
 router.use('/ai',        ai);
 router.use('/search',    search);
 router.use('/profile',   profile);
-
-// Health
-router.get('/health', (_, res) => res.json({ ok:true, ts: Date.now() }));
 
 export default router;

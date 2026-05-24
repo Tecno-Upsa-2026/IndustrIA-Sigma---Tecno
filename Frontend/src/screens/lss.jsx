@@ -1,22 +1,21 @@
 import { useEffect } from 'react'
 import { Card, Stat, PageHeader, Chip } from '../shell'
-import { SparkLine, ParetoChart, Histogram } from '../charts'
+import { SparkLine, ParetoChart, Histogram, ControlChart } from '../charts'
 import { PARETO, ISHIKAWA, SPC_DATA, makeSeries } from '../data'
 import { I } from '../icons'
 import { useData } from '../context/DataContext'
 
-export default function LSSScreen(){
-  const { lss, metrics, actions } = useData();
+export default function LSSScreen() {
+  const { lss, metrics, spcData, actions } = useData();
 
   useEffect(() => {
-    actions.fetchLSS().catch(()=>{});
+    actions.fetchLSS().catch(() => {});
+    actions.fetchSPCAll().catch(() => {});
   }, []);
 
-  // Overlay live DPMO / sigma if available
-  const liveDPMO  = metrics?.dpmo  || null;
   const liveSigma = metrics?.sigma || null;
-  const liveOEE   = metrics?.oee   || null;
   const liveYield = metrics?.yield || null;
+
   const phases = [
     {p:'D', name:'Define',  pct:100, c:'#22D3EE'},
     {p:'M', name:'Measure', pct:100, c:'#22D3EE'},
@@ -25,29 +24,52 @@ export default function LSSScreen(){
     {p:'C', name:'Control', pct:8,   c:'#64748B'},
   ];
 
+  // SPC data (live INJ-07 if available, else mock)
+  const liveINJ  = spcData['INJ-07'];
+  const points   = liveINJ?.points?.map(p => p.value) || SPC_DATA.points;
+  const stats    = liveINJ?.stats || {};
+
+  const spc = {
+    points,
+    mean: stats.mean || SPC_DATA.mean,
+    sd:   stats.sd   || SPC_DATA.sd,
+    ucl:  stats.ucl  || SPC_DATA.ucl,
+    lcl:  stats.lcl  || SPC_DATA.lcl,
+    usl:  stats.usl  || SPC_DATA.usl,
+    lsl:  stats.lsl  || SPC_DATA.lsl,
+    cp:   stats.cp   || SPC_DATA.cp  || 1.42,
+    cpk:  stats.cpk  || SPC_DATA.cpk || 1.31,
+  };
+
+  const mr     = points.slice(1).map((v,i) => Math.abs(v - points[i]));
+  const mrMean = mr.reduce((a,b) => a+b, 0) / mr.length;
+
   return (
     <div className="p-6 space-y-5">
       <PageHeader
-        eyebrow="// LEAN SIX SIGMA"
-        title="Analytics LSS"
-        desc="Análisis profundo de capability, causas raíz, DPMO y proyectos DMAIC en curso."
+        eyebrow="// LEAN SIX SIGMA · SPC"
+        title="Lean Six Sigma"
+        desc="DMAIC, análisis de capacidad, Ishikawa, control estadístico y distribución — por máquina."
         actions={
           <div className="flex items-center gap-2">
             <div className="panel rounded-md px-3 py-2 text-xs text-slate-300 hairline flex items-center gap-2">
               <span className="text-cyan2-400">{I.flask}</span> Proyecto · INJ-07 yield uplift
             </div>
-            <button className="panel rounded-md px-3 py-2 text-xs text-slate-300 hairline flex items-center gap-2 hover:text-cyan2-400">{I.plus} Nuevo proyecto</button>
+            <button className="px-3 py-2 text-xs rounded-md bg-cyan2-400/15 border border-cyan2-400/40 text-cyan2-400 flex items-center gap-2">
+              {I.download} PDF
+            </button>
           </div>
         }
       />
 
+      {/* DMAIC Phases */}
       <Card title="Proyecto DMAIC · INJ-07" subtitle="Reducción de defectos en línea 2 · Q1 2026" accent="ai">
         <div className="grid grid-cols-5 gap-2">
-          {phases.map((p,i)=>(
+          {phases.map((p,i) => (
             <div key={p.p} className="panel rounded p-3 relative overflow-hidden">
               <div className="flex items-center gap-2 mb-2">
                 <div className="w-8 h-8 rounded grid place-items-center font-display font-bold text-lg"
-                  style={{color: p.c, background: `${p.c}1c`, boxShadow:`inset 0 0 0 1px ${p.c}55`}}>{p.p}</div>
+                     style={{color:p.c, background:`${p.c}1c`, boxShadow:`inset 0 0 0 1px ${p.c}55`}}>{p.p}</div>
                 <div>
                   <div className="text-[10px] uppercase tracking-widest text-slate-500">Fase {i+1}</div>
                   <div className="text-sm text-white font-medium">{p.name}</div>
@@ -62,21 +84,43 @@ export default function LSSScreen(){
         </div>
       </Card>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-6 gap-3">
+      {/* SPC Stats — in Spanish */}
+      <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
         {[
-          {l:'DPMO',          v: liveDPMO  ? String(liveDPMO)  : '1,243',       d:'-138 (7d)', accent:'green'},
-          {l:'Sigma Level',   v: liveSigma ? `${liveSigma}σ`   : '4.61σ',       d:'+0.08',     accent:'cyan'},
-          {l:'Yield',         v: liveYield ? `${liveYield}%`   : '98.6%',       d:'+0.3%',     accent:'green'},
-          {l:'RTY',           v:'93.2%',   d:'+1.1%',     accent:'cyan'},
-          {l:'Cp / Cpk',      v: (metrics?.cp && metrics?.cpk) ? `${metrics.cp} / ${metrics.cpk}` : '1.42 / 1.31', d:'+0.04', accent:'cyan'},
-          {l:'Ahorro YTD',    v:'$182K',   d:'+$12K mes', accent:'ai'},
-        ].map(k=>(
-          <div key={k.l} className="panel rounded p-3 relative overflow-hidden corners" style={{color: k.accent==='green'?'#10B981':(k.accent==='ai'?'#A855F7':'#22D3EE')}}>
+          {l:'Media (X̄)',           v:spc.mean.toFixed(2), c:'cyan'},
+          {l:'Desv. estándar (σ)',   v:spc.sd.toFixed(3),   c:'cyan'},
+          {l:'Lím. Control Sup.',    v:spc.ucl.toFixed(2),  c:'red'},
+          {l:'Lím. Control Inf.',    v:spc.lcl.toFixed(2),  c:'red'},
+          {l:'Cp',                   v:(spc.cp||1.42).toFixed(2), c:'green'},
+          {l:'Cpk',                  v:(spc.cpk||1.31).toFixed(2), c:'green'},
+        ].map(k => (
+          <div key={k.l} className="panel rounded p-3 corners"
+               style={{color: k.c==='red'?'#EF4444':(k.c==='green'?'#10B981':'#22D3EE')}}>
+            <div className="text-[10px] uppercase tracking-widest text-slate-500">{k.l}</div>
+            <div className="num text-2xl mt-1"
+                 style={{color: k.c==='red'?'#EF4444':(k.c==='green'?'#10B981':'#22D3EE'), textShadow:`0 0 14px ${k.c==='red'?'#EF444455':(k.c==='green'?'#10B98155':'#22D3EE55')}`}}>
+              {k.v}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* KPI strip — remove DPMO and RTY */}
+      <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-4 gap-3">
+        {[
+          {l:'Sigma Level',  v: liveSigma ? `${liveSigma}σ` : '4.61σ',  d:'+0.08',     accent:'cyan'},
+          {l:'Yield',        v: liveYield ? `${liveYield}%` : '98.6%',   d:'+0.3%',     accent:'green'},
+          {l:'Cp / Cpk',     v: (metrics?.cp && metrics?.cpk) ? `${metrics.cp} / ${metrics.cpk}` : '1.42 / 1.31', d:'+0.04', accent:'cyan'},
+          {l:'Ahorro YTD',   v:'$182K',   d:'+$12K mes', accent:'ai'},
+        ].map(k => (
+          <div key={k.l} className="panel rounded p-3 relative overflow-hidden corners"
+               style={{color: k.accent==='green'?'#10B981':(k.accent==='ai'?'#A855F7':'#22D3EE')}}>
             <Stat label={k.l} value={k.v} delta={k.d} accent={k.accent}/>
           </div>
         ))}
       </div>
 
+      {/* Pareto + Capability */}
       <div className="grid grid-cols-12 gap-4">
         <Card title="Pareto · causas de defecto" subtitle="80/20 · vital few" className="col-span-12 xl:col-span-7" accent="cyan">
           <ParetoChart data={PARETO} w={680} h={260}/>
@@ -86,59 +130,96 @@ export default function LSSScreen(){
           </div>
         </Card>
 
-        <Card title="Capability analysis" subtitle="Pieza-clave · diámetro inyector" className="col-span-12 xl:col-span-5" accent="ai">
+        <Card title="Análisis de capacidad" subtitle="Pieza clave · diámetro inyector" className="col-span-12 xl:col-span-5" accent="ai">
           <div className="flex items-center justify-around mb-3">
-            {[{l:'Cp',v:1.42},{l:'Cpk',v:1.31},{l:'Pp',v:1.39},{l:'Ppk',v:1.27}].map(x=>(
+            {[{l:'Cp',v:1.42},{l:'Cpk',v:1.31},{l:'Pp',v:1.39},{l:'Ppk',v:1.27}].map(x => (
               <div key={x.l} className="text-center">
                 <div className="num text-2xl text-ai-400" style={{textShadow:'0 0 14px #A855F755'}}>{x.v}</div>
                 <div className="text-[10px] text-slate-500 uppercase tracking-widest">{x.l}</div>
               </div>
             ))}
           </div>
-          <Histogram data={SPC_DATA.points} bins={14} w={420} h={170} color="#A855F7"/>
+          <Histogram data={SPC_DATA.points} bins={14} w={420} h={160} color="#A855F7"/>
           <div className="grid grid-cols-3 gap-2 mt-3 text-[10px]">
-            <div className="panel rounded p-2"><div className="text-slate-500">LSL</div><div className="num text-warn-400">{SPC_DATA.lsl.toFixed(2)}</div></div>
-            <div className="panel rounded p-2"><div className="text-slate-500">μ</div><div className="num text-white">{SPC_DATA.mean.toFixed(2)}</div></div>
-            <div className="panel rounded p-2"><div className="text-slate-500">USL</div><div className="num text-warn-400">{SPC_DATA.usl.toFixed(2)}</div></div>
+            <div className="panel rounded p-2"><div className="text-slate-500">Lím. Inferior</div><div className="num text-warn-400">{SPC_DATA.lsl.toFixed(2)}</div></div>
+            <div className="panel rounded p-2"><div className="text-slate-500">Media (μ)</div><div className="num text-white">{SPC_DATA.mean.toFixed(2)}</div></div>
+            <div className="panel rounded p-2"><div className="text-slate-500">Lím. Superior</div><div className="num text-warn-400">{SPC_DATA.usl.toFixed(2)}</div></div>
           </div>
         </Card>
       </div>
 
+      {/* Ishikawa */}
       <Card title="Ishikawa · 6M" subtitle={ISHIKAWA.problem} accent="cyan">
         <IshikawaDiagram/>
       </Card>
 
+      {/* Control chart X̄ */}
+      <Card title="Carta de control X̄ · subgrupos n=5"
+            subtitle="40 subgrupos · puntos fuera de control resaltados" accent="cyan">
+        <ControlChart data={spc.points} mean={spc.mean} ucl={spc.ucl} lcl={spc.lcl}
+                      usl={spc.usl} lsl={spc.lsl} w={1000} h={260}/>
+      </Card>
+
+      {/* Moving Range + Histogram */}
       <div className="grid grid-cols-12 gap-4">
-        <Card title="DPMO trend · 30d" className="col-span-12 xl:col-span-6" accent="green">
-          <div className="num text-3xl text-grind-400" style={{textShadow:'0 0 14px #10B98155'}}>1,243</div>
-          <div className="text-[11px] text-slate-500">defectos por millón de oportunidades</div>
-          <div className="mt-3">
-            <SparkLine data={makeSeries(30, 1500, 90, -10).map(v=>Math.max(900,v))} h={120} stroke="#10B981" fill="rgba(16,185,129,0.18)"/>
-          </div>
+        <Card title="Rango Móvil (MR)" subtitle="40 puntos" className="col-span-12 xl:col-span-7" accent="cyan">
+          <ControlChart data={mr} mean={mrMean} ucl={mrMean*3.27} lcl={0}
+                        usl={mrMean*3.27+0.05} lsl={-0.001} w={680} h={200}/>
         </Card>
-        <Card title="Yield por línea" className="col-span-12 xl:col-span-6" accent="cyan">
-          <div className="space-y-3">
-            {[
-              {l:'Línea 1', y:99.4, c:'#10B981'},
-              {l:'Línea 2', y:96.8, c:'#F59E0B'},
-              {l:'Línea 3', y:91.2, c:'#EF4444'},
-              {l:'Línea 4', y:98.9, c:'#10B981'},
-            ].map(l=>(
-              <div key={l.l}>
-                <div className="flex justify-between text-[11px] mb-1"><span className="text-slate-300">{l.l}</span><span className="num" style={{color:l.c}}>{l.y}%</span></div>
-                <div className="h-1.5 rounded bg-slate-700/40 overflow-hidden">
-                  <div className="h-full rounded" style={{width:`${l.y}%`, background:`linear-gradient(90deg,${l.c},${l.c}aa)`, boxShadow:`0 0 6px ${l.c}`}}/>
-                </div>
-              </div>
-            ))}
+        <Card title="Histograma · distribución" subtitle="Con curva normal ajustada" className="col-span-12 xl:col-span-5" accent="ai">
+          <Histogram data={points} bins={14} w={420} h={200} color="#A855F7"/>
+          <div className="grid grid-cols-3 gap-2 mt-2 text-[11px]">
+            <div className="panel rounded p-2"><div className="text-slate-500">Media (μ)</div><div className="num text-white">{spc.mean.toFixed(3)}</div></div>
+            <div className="panel rounded p-2"><div className="text-slate-500">Desv. (σ)</div><div className="num text-white">{spc.sd.toFixed(3)}</div></div>
+            <div className="panel rounded p-2"><div className="text-slate-500">Asimetría</div><div className="num text-white">0.14</div></div>
           </div>
         </Card>
       </div>
+
+      {/* Data table — last 40 readings, without WECO */}
+      <Card title="Datos de subgrupos · últimas 40 lecturas" subtitle="Característica diámetro [mm]" accent="cyan">
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead className="text-[10px] tracking-widest uppercase text-slate-500">
+              <tr className="hairline-bottom">
+                <th className="text-left py-2 px-2">#</th>
+                <th className="text-left">Fecha/Hora</th>
+                <th className="text-left">Media (X̄)</th>
+                <th className="text-left">Rango (R)</th>
+                <th className="text-left">Desv. (σ)</th>
+                <th className="text-left">Lím. Superior</th>
+                <th className="text-left">Lím. Inferior</th>
+                <th className="text-left">Estado</th>
+              </tr>
+            </thead>
+            <tbody>
+              {points.slice(-10).map((v, i) => {
+                const idx  = points.length - 10 + i;
+                const ooc  = v > spc.ucl || v < spc.lcl;
+                const warn = v > spc.usl || v < spc.lsl;
+                const t    = new Date(Date.now() - (10-i) * 60000);
+                return (
+                  <tr key={idx} className="hairline-bottom hover:bg-white/[0.02]">
+                    <td className="py-1.5 px-2 num text-slate-500">{idx+1}</td>
+                    <td className="num text-slate-400">{t.toLocaleTimeString()}</td>
+                    <td className={`num ${ooc?'text-crit-400':warn?'text-warn-400':'text-white'}`}>{v.toFixed(3)}</td>
+                    <td className="num text-slate-300">{(Math.random()*0.4+0.1).toFixed(3)}</td>
+                    <td className="num text-slate-300">{(Math.random()*0.2+0.05).toFixed(3)}</td>
+                    <td className="num text-slate-500">{spc.usl.toFixed(2)}</td>
+                    <td className="num text-slate-500">{spc.lsl.toFixed(2)}</td>
+                    <td>{ooc ? <Chip color="red">OOC</Chip> : warn ? <Chip color="amber">WARN</Chip> : <Chip color="green">OK</Chip>}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </Card>
     </div>
   );
 }
 
-function IshikawaDiagram(){
+function IshikawaDiagram() {
   const w=900, h=320;
   const spine = { x1:50, y1:h/2, x2:w-80, y2:h/2 };
   const bones = ISHIKAWA.branches;
@@ -149,19 +230,18 @@ function IshikawaDiagram(){
         <line x1={spine.x1} y1={spine.y1} x2={spine.x2} y2={spine.y2} stroke="#22D3EE" strokeWidth="2"/>
         <path d={`M ${spine.x2} ${spine.y2-8} L ${spine.x2+18} ${spine.y2} L ${spine.x2} ${spine.y2+8} Z`} fill="#22D3EE" style={{filter:'drop-shadow(0 0 6px #22D3EE)'}}/>
         <rect x={w-78} y={h/2-22} width="140" height="44" rx="6" fill="rgba(168,85,247,0.12)" stroke="#A855F7"/>
-        <text x={w-8} y={h/2-2} fill="#A855F7" fontSize="9" textAnchor="middle" fontFamily="JetBrains Mono">PROBLEMA</text>
-        <text x={w-8} y={h/2+14} fill="#fff" fontSize="11" textAnchor="middle" fontWeight="600">Defectos lote</text>
-        {bones.map((b,i)=>{
-          const top = i<3;
-          const x = 130 + (i%3)*220;
+        <text x={w-8} y={h/2-2}  fill="#A855F7" fontSize="9" textAnchor="middle" fontFamily="JetBrains Mono">PROBLEMA</text>
+        <text x={w-8} y={h/2+14} fill="#fff"    fontSize="11" textAnchor="middle" fontWeight="600">Defectos lote</text>
+        {bones.map((b, i) => {
+          const top  = i < 3;
+          const x    = 130 + (i%3) * 220;
           const yEnd = top ? 60 : h-60;
-          const yStart = h/2;
           return (
             <g key={b.name}>
-              <line x1={x} y1={yEnd} x2={x+ (top?-30: -30)} y2={yStart} stroke="#22D3EE" strokeWidth="1.5"/>
+              <line x1={x} y1={yEnd} x2={x-30} y2={h/2} stroke="#22D3EE" strokeWidth="1.5"/>
               <text x={x-30} y={yEnd-(top?6:-18)} fill="#22D3EE" fontSize="11" fontWeight="600" fontFamily="Inter">{b.name}</text>
-              {b.causes.map((c,j)=>{
-                const cx = x + 40 + j*0;
+              {b.causes.map((c, j) => {
+                const cx = x + 40;
                 const cy = top ? yEnd + 8 + j*16 : yEnd - 8 - j*16;
                 return (
                   <g key={j}>
