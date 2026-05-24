@@ -11,3 +11,6 @@ Frontend/dist/
 .env
 Backend/.env
 Frontend/.env
+
+#carpeta de diagnostico
+debugging/
