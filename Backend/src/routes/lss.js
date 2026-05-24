@@ -25,17 +25,17 @@ router.get('/metrics', (_req, res) => {
 router.get('/pareto', (_req, res) => {
   // Dynamic pareto based on current machine states
   const base = [
-    { cause:'Temperatura', count:148 },
-    { cause:'Vibración',   count:97  },
-    { cause:'Presión',     count:64  },
-    { cause:'Material',    count:42  },
-    { cause:'Operario',    count:28  },
-    { cause:'Calibración', count:18  },
-    { cause:'Otros',       count:10  },
+    { cause: 'Temperatura', count: 148 },
+    { cause: 'Vibración', count: 97 },
+    { cause: 'Presión', count: 64 },
+    { cause: 'Material', count: 42 },
+    { cause: 'Operario', count: 28 },
+    { cause: 'Calibración', count: 18 },
+    { cause: 'Otros', count: 10 },
   ];
   // Slightly jitter counts based on live machine data
-  const ovenTemp = state.machines['OVN-09']?.temp || 248;
-  base[0].count = Math.round(148 + (ovenTemp - 248) * 2);
+  const ovenTemp = state.machines['FUR-01']?.temp || 220;
+  base[0].count = Math.round(148 + (ovenTemp - 220) * 2);
   res.json(base);
 });
 
@@ -69,7 +69,7 @@ router.get('/dpmo-trend', (_req, res) => {
 // GET /api/lss/dmaic — DMAIC project status
 router.get('/dmaic', (_req, res) => {
   res.json({
-    project: 'INJ-07 yield uplift',
+    project: 'BTL-03 fill volume stability',
     phases: [
       { p:'D', name:'Define',  pct:100, c:'#22D3EE' },
       { p:'M', name:'Measure', pct:100, c:'#22D3EE' },

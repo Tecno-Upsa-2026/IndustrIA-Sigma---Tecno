@@ -20,6 +20,7 @@ router.get('/:machineId/latest', (req, res) => {
     const idx = pts.length - 10 + i;
     const ooc  = v > stats.ucl || v < stats.lcl;
     const warn = v > stats.usl || v < stats.lsl;
+    const weco = stats.wecoIndices.find(hit => hit.index === idx)?.rules || [];
     return {
       idx: idx + 1,
       ts:  Date.now() - (10 - i) * 60000,
@@ -29,7 +30,7 @@ router.get('/:machineId/latest', (req, res) => {
       usl: parseFloat(stats.usl.toFixed(3)),
       lsl: parseFloat(stats.lsl.toFixed(3)),
       status: ooc ? 'OOC' : warn ? 'WARN' : 'OK',
-      weco:   ooc ? 'R1'  : warn ? 'R5'  : '—',
+      weco:   weco.length ? weco.join(',') : (ooc ? 'R1' : warn ? 'R5' : '—'),
     };
   });
   res.json({ ...stats, last10 });

@@ -6,26 +6,32 @@ import { WebSocketServer } from 'ws';
 import { broadcaster } from './src/ws/broadcaster.js';
 import { startEngine } from './src/simulation/engine.js';
 import router from './src/routes/index.js';
+import { loadSimulationFromCSV } from './src/store/state.js';
+import { calibrateFromDataRows, applyCalibration } from './src/simulation/calibrator.js';
 
 const PORT = process.env.PORT || 3001;
-const app  = express();
+const app = express();
 const httpServer = createServer(app);
 
-// ── Middleware ────────────────────────────────────────────────────────────────
 app.use(cors({ origin: '*' }));
 app.use(express.json());
 
-// ── REST API ──────────────────────────────────────────────────────────────────
 app.use('/api', router);
 
-// ── WebSocket ─────────────────────────────────────────────────────────────────
 const wss = new WebSocketServer({ server: httpServer, path: '/ws' });
 broadcaster.init(wss);
 
-// ── Simulation engine ─────────────────────────────────────────────────────────
+try {
+  const csvData = loadSimulationFromCSV();
+  const calibrations = calibrateFromDataRows(csvData.dataRows);
+  const updated = applyCalibration(calibrations);
+  console.log(`  [CSV] Configuración cargada: ${Object.keys(csvData.machines).length} máquinas, ${updated} variables calibradas`);
+} catch (error) {
+  console.warn(`  [CSV] No se pudo cargar o calibrar: ${error.message}`);
+}
+
 startEngine();
 
-// ── Start ─────────────────────────────────────────────────────────────────────
 httpServer.listen(PORT, () => {
   console.log(`\n  IndustrIA Σ Backend  →  http://localhost:${PORT}`);
   console.log(`  WebSocket            →  ws://localhost:${PORT}/ws`);

@@ -2,12 +2,9 @@ import { Router } from 'express';
 import { state, getMachinesArray, getActiveAlerts } from '../store/state.js';
 import { calcGlobalMetrics } from '../simulation/metrics.js';
 import { supabase } from '../lib/supabase.js';
+import { chat, generateInsights } from '../services/llm/orchestrator.js';
 
 const router = Router();
-
-const GROQ_KEY   = process.env.GROQ_API_KEY;
-const GROQ_MODEL = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
-const GROQ_URL   = 'https://api.groq.com/openai/v1/chat/completions';
 
 // ── Build live plant context for system prompt ────────────────────────────────
 function buildPlantContext() {
@@ -43,30 +40,6 @@ Métricas globales:
 
 Enfocate en: calidad (Cp, Cpk, DPMO), OEE, mantenimiento predictivo y optimización de proceso.
 Sé directo. Sin introducciones largas. Máximo 3 párrafos o puntos concretos.`;
-}
-
-// ── Call Groq API ─────────────────────────────────────────────────────────────
-async function callGroq(messages, maxTokens = 600) {
-  if (!GROQ_KEY) throw new Error('GROQ_API_KEY no configurada');
-
-  const res = await fetch(GROQ_URL, {
-    method:  'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${GROQ_KEY}` },
-    body: JSON.stringify({
-      model:       GROQ_MODEL,
-      messages,
-      max_tokens:  maxTokens,
-      temperature: 0.4,
-    }),
-  });
-
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.error?.message || `Groq error ${res.status}`);
-  }
-
-  const data = await res.json();
-  return data.choices[0].message.content.trim();
 }
 
 // ── Supabase helpers ──────────────────────────────────────────────────────────
@@ -131,47 +104,6 @@ async function dbGetConversations() {
 // ── Insights cache (refresh every 5 min) ──────────────────────────────────────
 let insightsCache = { data: null, ts: 0 };
 
-async function generateInsights() {
-  const now = Date.now();
-  if (insightsCache.data && now - insightsCache.ts < 5 * 60 * 1000) {
-    return insightsCache.data;
-  }
-
-  const systemPrompt = buildPlantContext();
-  const userPrompt   = `Generá exactamente 4 insights del estado actual de la planta, en formato JSON array.
-Cada insight debe tener: tag (1 palabra en mayúsculas), c (color: red|amber|cyan|green|ai), t (texto del insight, máx 90 chars), ago (tiempo estimado, ej "hace 3m"), conf (confianza como %, ej "91%").
-Respondé SOLO con el JSON array, sin texto extra. Ejemplo: [{"tag":"ANOMALÍA","c":"red","t":"...","ago":"hace 5m","conf":"91%"}]`;
-
-  try {
-    const raw  = await callGroq([
-      { role: 'system', content: systemPrompt },
-      { role: 'user',   content: userPrompt },
-    ], 400);
-
-    const match = raw.match(/\[[\s\S]*\]/);
-    if (!match) throw new Error('No JSON array in response');
-    const insights = JSON.parse(match[0]);
-
-    insightsCache = { data: insights, ts: now };
-    return insights;
-  } catch (e) {
-    const machines = getMachinesArray();
-    const crit     = machines.filter(m => m.status === 'CRITICAL');
-    const warn     = machines.filter(m => m.status === 'WARN');
-    const metrics  = calcGlobalMetrics();
-
-    const fallback = [
-      crit[0] && { tag:'CRÍTICO', c:'red',   t:`${crit[0].id} en estado crítico — temp ${crit[0].temp?.toFixed(1)}°C`, ago:'ahora', conf:'—' },
-      warn[0] && { tag:'ATENCIÓN',c:'amber', t:`${warn[0].id} requiere atención — vibración ${warn[0].vib?.toFixed(2)}g`, ago:'ahora', conf:'—' },
-      { tag:'OEE',  c:'cyan', t:`OEE global: ${metrics.oee}% — sigma nivel ${metrics.sigma}σ`, ago:'1m', conf:'—' },
-      { tag:'DPMO', c:'ai',   t:`DPMO actual: ${metrics.dpmo} — producción ${metrics.production} pzs/h`, ago:'1m', conf:'—' },
-    ].filter(Boolean).slice(0, 4);
-
-    insightsCache = { data: fallback, ts: now };
-    return fallback;
-  }
-}
-
 // ── Routes ────────────────────────────────────────────────────────────────────
 
 // GET /api/ai/conversations
@@ -215,27 +147,28 @@ router.post('/chat', async (req, res) => {
     content: m.content || m.t || '',
   }));
 
-  let text;
-  try {
-    text = await callGroq([{ role: 'system', content: systemPrompt }, ...history]);
-  } catch (e) {
-    console.error('[AI] Groq error:', e.message);
-    text = `Error al conectar con el modelo IA: ${e.message}. Verificá la API key en .env.`;
-  }
+  const aiResult = await chat(history, systemPrompt, csvContext);
+  const text = aiResult.text || 'No se pudo generar una respuesta.';
 
   // Save AI response
   await dbSaveMessage(convId, 'ai', text);
   const aiMsg = { role: 'ai', t: text, ts: Date.now() };
   memConv.messages.push(aiMsg);
 
-  res.json({ conversationId: convId, response: aiMsg });
+  res.json({ conversationId: convId, response: aiMsg, provider: aiResult.provider, mode: aiResult.mode });
 });
 
 // GET /api/ai/insights
 router.get('/insights', async (_req, res) => {
   try {
-    const insights = await generateInsights();
-    res.json(insights);
+    const now = Date.now();
+    if (insightsCache.data && now - insightsCache.ts < 5 * 60 * 1000) {
+      return res.json(insightsCache.data);
+    }
+
+    const result = await generateInsights(buildPlantContext());
+    insightsCache = { data: result, ts: now };
+    res.json(result);
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -244,7 +177,7 @@ router.get('/insights', async (_req, res) => {
 // GET /api/ai/models
 router.get('/models', (_req, res) => {
   res.json([
-    { n: GROQ_MODEL.split('-').slice(0, 2).join(' '), v: 'Groq', conf: 97, c: '#A855F7' },
+    { n: 'llama 3.3', v: 'Groq', conf: 97, c: '#A855F7' },
     { n: 'Anomaly-Detect',  v: 'v2.41', conf: 91, c: '#22D3EE' },
     { n: 'Predict-Failure', v: 'v1.8',  conf: 88, c: '#3B82F6' },
     { n: 'Process-Optim',   v: 'v3.0',  conf: 84, c: '#10B981' },

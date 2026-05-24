@@ -1,6 +1,7 @@
 import { Router } from 'express';
-import { state, addEvent } from '../store/state.js';
+import { state, addEvent, MACHINE_PROFILES } from '../store/state.js';
 import { calcSimResults } from '../simulation/metrics.js';
+import { getRecommendedSetpoints } from '../simulation/optimizer.js';
 import { broadcaster } from '../ws/broadcaster.js';
 
 const router = Router();
@@ -92,6 +93,22 @@ router.delete('/scenarios/:id', (req, res) => {
   if (idx < 0) return res.status(404).json({ error: 'Escenario no encontrado' });
   state.simulator.scenarios.splice(idx, 1);
   res.json({ ok:true });
+});
+
+// POST /api/simulator/optimize — recommend optimal setpoints for a machine
+router.post('/optimize', (req, res) => {
+  const { machineId } = req.body || {};
+  if (!machineId) return res.status(400).json({ error: 'machineId requerido' });
+
+  const profile = MACHINE_PROFILES[machineId];
+  if (!profile) return res.status(404).json({ error: 'Máquina no encontrada' });
+
+  const recommendations = getRecommendedSetpoints(profile, { maxCombinations: 500 });
+  res.json({
+    machineId,
+    process: profile.process,
+    recommendations,
+  });
 });
 
 export default router;

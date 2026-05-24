@@ -27,36 +27,107 @@ function normInv(p) {
 
 // ── SPC stats from array of points ───────────────────────────────────────────
 export function calcSPCStats(points) {
-  const n    = points.length;
-  const mean = points.reduce((s, v) => s + v, 0) / n;
-  const sd   = Math.sqrt(points.reduce((s, v) => s + (v - mean) ** 2, 0) / n);
-  const ucl  = mean + 3 * sd;
-  const lcl  = mean - 3 * sd;
-  const usl  = mean + 2.5 * sd + 0.15;
-  const lsl  = mean - 2.5 * sd - 0.15;
+  const n = points.length;
+  if (!n) {
+    return { points, mean: 0, sd: 0, ucl: 0, lcl: 0, usl: 0, lsl: 0, cp: 0, cpk: 0, oocIndices: [], wecoIndices: [] };
+  }
 
-  // Process capability
-  const cp  = (usl - lsl) / (6 * sd);
-  const cpk = Math.min((usl - mean) / (3 * sd), (mean - lsl) / (3 * sd));
+  const mean = points.reduce((sum, value) => sum + value, 0) / n;
+  const variance = points.reduce((sum, value) => sum + (value - mean) ** 2, 0) / n;
+  const sd = Math.sqrt(variance);
+  const safeSd = sd > 1e-9 ? sd : 1e-9;
+  const ucl = mean + 3 * safeSd;
+  const lcl = mean - 3 * safeSd;
+  const usl = mean + 2.5 * safeSd + 0.15;
+  const lsl = mean - 2.5 * safeSd - 0.15;
+  const cp = (usl - lsl) / (6 * safeSd);
+  const cpk = Math.min((usl - mean) / (3 * safeSd), (mean - lsl) / (3 * safeSd));
 
-  // WECO rule detections
-  const oocIndices  = points.reduce((a, v, i) => { if (v > ucl || v < lcl) a.push(i); return a; }, []);
-  const wecoIndices = detectWECO(points, mean, sd, ucl, lcl);
+  const oocIndices = points.reduce((indices, value, index) => {
+    if (value > ucl || value < lcl) indices.push(index);
+    return indices;
+  }, []);
+  const wecoIndices = detectWECO(points, mean, safeSd);
 
   return { points, mean, sd, ucl, lcl, usl, lsl, cp, cpk, oocIndices, wecoIndices };
 }
 
-// ── WECO rule 1 (any point beyond ±3σ) already covered by OOC.
-//    Rule 5: 2 of 3 consecutive in zone A (beyond ±2σ)
-function detectWECO(pts, mean, sd) {
-  const hits = [];
-  const zoneA = 2 * sd;
-  for (let i = 2; i < pts.length; i++) {
-    const window = [pts[i-2], pts[i-1], pts[i]];
-    const beyond = window.filter(v => Math.abs(v - mean) > zoneA).length;
-    if (beyond >= 2) hits.push(i);
+function pushRule(hits, index, rule) {
+  const item = hits.get(index) || { index, rules: [] };
+  if (!item.rules.includes(rule)) item.rules.push(rule);
+  hits.set(index, item);
+}
+
+function sideOf(value, mean) {
+  if (value > mean) return 1;
+  if (value < mean) return -1;
+  return 0;
+}
+
+function detectWECO(points, mean, sd) {
+  const hits = new Map();
+  const zone1 = sd;
+  const zone2 = 2 * sd;
+  const zone3 = 3 * sd;
+
+  for (let i = 0; i < points.length; i++) {
+    const value = points[i];
+    if (Math.abs(value - mean) > zone3) pushRule(hits, i, 'R1');
   }
-  return hits;
+
+  for (let i = 2; i < points.length; i++) {
+    const window = [points[i - 2], points[i - 1], points[i]];
+    const zoneA = window.filter(v => Math.abs(v - mean) > zone2);
+    if (zoneA.length >= 2) {
+      pushRule(hits, i, 'R2');
+      const sameSide = zoneA.every(v => sideOf(v, mean) === sideOf(zoneA[0], mean) && sideOf(v, mean) !== 0);
+      if (sameSide) pushRule(hits, i, 'R8');
+    }
+  }
+
+  for (let i = 4; i < points.length; i++) {
+    const window = points.slice(i - 4, i + 1);
+    const zoneB = window.filter(v => Math.abs(v - mean) > zone1);
+    if (zoneB.length >= 4) pushRule(hits, i, 'R3');
+  }
+
+  for (let i = 7; i < points.length; i++) {
+    const window = points.slice(i - 7, i + 1);
+    const sameSide = window.every(v => sideOf(v, mean) !== 0 && sideOf(v, mean) === sideOf(window[0], mean));
+    if (sameSide) pushRule(hits, i, 'R4');
+  }
+
+  for (let i = 14; i < points.length; i++) {
+    const window = points.slice(i - 14, i + 1);
+    const allInsideC = window.every(v => Math.abs(v - mean) <= zone1);
+    if (allInsideC) pushRule(hits, i, 'R5');
+  }
+
+  for (let i = 7; i < points.length; i++) {
+    const window = points.slice(i - 7, i + 1);
+    let increasing = true;
+    let decreasing = true;
+    for (let j = 1; j < window.length; j++) {
+      if (!(window[j] > window[j - 1])) increasing = false;
+      if (!(window[j] < window[j - 1])) decreasing = false;
+    }
+    if (increasing || decreasing) pushRule(hits, i, 'R6');
+  }
+
+  for (let i = 13; i < points.length; i++) {
+    const window = points.slice(i - 13, i + 1);
+    let alternating = true;
+    let lastSide = sideOf(window[0], mean);
+    if (lastSide === 0) alternating = false;
+    for (let j = 1; j < window.length && alternating; j++) {
+      const currentSide = sideOf(window[j], mean);
+      if (currentSide === 0 || currentSide === lastSide) alternating = false;
+      lastSide = currentSide;
+    }
+    if (alternating) pushRule(hits, i, 'R7');
+  }
+
+  return Array.from(hits.values()).sort((a, b) => a.index - b.index);
 }
 
 // ── Global platform metrics ───────────────────────────────────────────────────
@@ -82,6 +153,13 @@ export function calcGlobalMetrics() {
   // Production: latest value
   const latestProd = state.productionHistory[state.productionHistory.length - 1]?.value || 1840;
 
+  const capabilitySamples = [];
+  for (const pts of Object.values(state.spcWindows)) {
+    if (Array.isArray(pts) && pts.length >= 2) capabilitySamples.push(calcSPCStats(pts));
+  }
+  const avgCp = capabilitySamples.length ? capabilitySamples.reduce((sum, sample) => sum + sample.cp, 0) / capabilitySamples.length : 0;
+  const avgCpk = capabilitySamples.length ? capabilitySamples.reduce((sum, sample) => sum + sample.cpk, 0) / capabilitySamples.length : 0;
+
   return {
     oee:          parseFloat(avgOEE.toFixed(1)),
     sigma:        isFinite(sigma) ? sigma : 4.5,
@@ -90,8 +168,8 @@ export function calcGlobalMetrics() {
     activeAlerts,
     energy:       Math.round(totalEnergy),
     production:   latestProd,
-    cp:           1.42,   // aggregate capability (demo value)
-    cpk:          1.31,
+    cp:           parseFloat(avgCp.toFixed(2)),
+    cpk:          parseFloat(avgCpk.toFixed(2)),
   };
 }
 

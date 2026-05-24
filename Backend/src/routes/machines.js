@@ -28,8 +28,11 @@ router.post('/', (req, res) => {
 
   const machine = {
     id, name, line,
+    process: 'CUSTOM',
     status: 'IDLE', temp: 24, vib: 0.05, rpm: 0,
     load: 0, defect: 0, oee: 0, energy: 2,
+    vars: {},
+    quality: {},
     setpointOverride: null,
   };
   state.machines[id] = machine;
