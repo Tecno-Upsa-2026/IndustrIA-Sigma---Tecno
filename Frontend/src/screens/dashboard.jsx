@@ -6,6 +6,31 @@ import { I } from '../icons'
 import { useData } from '../context/DataContext'
 import { supabase } from '../lib/supabase'
 
+// ─── Extract real sensor values from a CSV last row ───────────────────────────
+const CSV_SENSOR_MAP = {
+  temp:  ['temperatura_c','temp_zona1_c','temp_zona2_c','temperatura'],
+  vib:   ['vibracion_g','vibracion'],
+  load:  ['velocidad_pct','carga_pct','carga'],
+  oee:   ['oee_pct','oee'],
+  rpm:   ['rpm'],
+};
+function extractFromCsvRow(row) {
+  const find = (keys) => {
+    for (const k of keys) {
+      const col = Object.keys(row).find(c => c.toLowerCase() === k);
+      if (col && !isNaN(parseFloat(row[col]))) return parseFloat(row[col]);
+    }
+    return null;
+  };
+  return {
+    temp: find(CSV_SENSOR_MAP.temp),
+    vib:  find(CSV_SENSOR_MAP.vib),
+    load: find(CSV_SENSOR_MAP.load),
+    oee:  find(CSV_SENSOR_MAP.oee),
+    rpm:  find(CSV_SENSOR_MAP.rpm),
+  };
+}
+
 // Auto-detect machine ID from filename (e.g. "INJ-07_historico.csv" → "INJ-07")
 function detectMachineId(fileName, machinesArr) {
   const upper = fileName.toUpperCase();
@@ -189,7 +214,7 @@ function ParamSlider({ label, unit, min, max, step, value, onChange, ideal }) {
 }
 
 // ─── Machine mini card ─────────────────────────────────────────────────────────
-function MachineMini({ m, selected, onSelect }) {
+function MachineMini({ m, selected, onSelect, hasCSV }) {
   const stMap = {
     RUNNING:  { c:'#10B981', txt:'Operando' },
     WARN:     { c:'#F59E0B', txt:'Atención' },
@@ -205,7 +230,10 @@ function MachineMini({ m, selected, onSelect }) {
       <div className="absolute top-0 left-0 right-0 h-px" style={{background:`linear-gradient(90deg, transparent, ${s.c}, transparent)`}}/>
       <div className="flex items-center justify-between mb-1.5">
         <div>
-          <div className="num text-[10px] text-slate-500">{m.id}</div>
+          <div className="num text-[10px] text-slate-500 flex items-center gap-1.5">
+            {m.id}
+            {hasCSV && <span className="text-[8px] px-1 rounded bg-grind-400/15 text-grind-400 border border-grind-400/30 tracking-wider">CSV</span>}
+          </div>
           <div className="text-xs font-medium text-white">{m.name}</div>
         </div>
         <StatusDot status={m.status}/>
@@ -217,7 +245,7 @@ function MachineMini({ m, selected, onSelect }) {
           <div className="num text-lg" style={{color:s.c}}>{(m.oee||0).toFixed(1)}<span className="text-[10px] text-slate-500 ml-0.5">%</span></div>
         </div>
         <div className="flex-1 ml-3">
-          <LiveWave color={s.c} amp={6} base={50} speed={200} height={28}/>
+          <LiveWave color={s.c} amp={m.status==='IDLE'?1:m.status==='CRITICAL'?10:6} base={50} speed={m.status==='IDLE'?800:200} height={28}/>
         </div>
       </div>
       <div className="grid grid-cols-3 gap-1 mt-2 text-[9px]">
@@ -229,13 +257,174 @@ function MachineMini({ m, selected, onSelect }) {
   );
 }
 
+// ─── Simulation engine ─────────────────────────────────────────────────────────
+function simTick(machines, params, selectedId) {
+  return machines.map(m => {
+    const isSel = m.id === selectedId;
+
+    let temp = m.temp + (Math.random() - 0.5) * 1.5;
+    let vib  = m.vib  + (Math.random() - 0.5) * 0.04;
+    let load = m.load + (Math.random() - 0.5) * 2.5;
+
+    // Apply process variable overrides to selected machine
+    if (isSel) {
+      temp = params.temp      + (Math.random() - 0.5) * 2.5;
+      vib  = params.vibration + (Math.random() - 0.5) * 0.05;
+      load = params.speed     + (Math.random() - 0.5) * 3;
+    }
+
+    // Clamp to realistic ranges
+    temp = Math.max(20,   Math.min(280, temp));
+    vib  = Math.max(0.05, Math.min(1.5,  vib));
+    load = Math.max(0,    Math.min(100,  load));
+
+    // Status thresholds
+    let status;
+    if (load < 4)                                    status = 'IDLE';
+    else if (temp > 245 || vib > 0.88 || load > 95) status = 'CRITICAL';
+    else if (temp > 225 || vib > 0.65 || load > 85) status = 'WARN';
+    else                                             status = 'RUNNING';
+
+    const oeeBase = { RUNNING:91, WARN:74, CRITICAL:57, IDLE:0 }[status];
+    const oee     = Math.max(0, Math.min(100, oeeBase + (Math.random() - 0.5) * 6));
+    const defect  = Math.max(0, m.defect + (Math.random() - 0.5) * 0.4
+      + (isSel ? Math.abs(params.temp - 200) * 0.015 : 0));
+
+    return { ...m, temp, vib, load, status, oee, defect };
+  });
+}
+
+// ─── Local AI insights (no backend needed) ────────────────────────────────────
+function generateLocalInsights(machines) {
+  const critical = machines.filter(m => m.status === 'CRITICAL');
+  const warn     = machines.filter(m => m.status === 'WARN');
+  const hottest  = [...machines].sort((a,b) => b.temp - a.temp)[0];
+  const mostVib  = [...machines].sort((a,b) => b.vib - a.vib)[0];
+  const lowOee   = machines.filter(m => m.status !== 'IDLE' && m.oee < 70);
+
+  const out = [];
+
+  if (critical.length) out.push({
+    tag:'CRÍTICO', c:'red',
+    t: `${critical.map(m=>m.id).join(', ')} fuera de límites — revisar de inmediato.`,
+    ago:'ahora', conf:'97%',
+  });
+
+  if (warn.length) out.push({
+    tag:'ATENCIÓN', c:'amber',
+    t: `${warn.map(m=>m.id).join(', ')} en zona de advertencia. Monitorear tendencia.`,
+    ago:'<1 min', conf:'88%',
+  });
+
+  if (hottest?.temp > 232) out.push({
+    tag:'TEMPERATURA', c:'red',
+    t: `${hottest.id} registra ${hottest.temp.toFixed(1)}°C — supera umbral de 230°C.`,
+    ago:'ahora', conf:'93%',
+  });
+
+  if (!out.length && mostVib?.vib > 0.6) out.push({
+    tag:'VIBRACIÓN', c:'amber',
+    t: `${mostVib.id} vib ${mostVib.vib.toFixed(2)}g — posible desbalance. Agendar inspección.`,
+    ago:'<2 min', conf:'82%',
+  });
+
+  if (lowOee.length) out.push({
+    tag:'OEE BAJO', c:'ai',
+    t: `${lowOee.map(m=>`${m.id} (${m.oee.toFixed(0)}%)`).join(', ')} por debajo del 70%.`,
+    ago:'<5 min', conf:'79%',
+  });
+
+  if (!out.length) out.push({
+    tag:'ÓPTIMO', c:'green',
+    t: 'Todos los equipos dentro de parámetros normales. Sin anomalías detectadas.',
+    ago:'ahora', conf:'99%',
+  });
+
+  return out;
+}
+
+// ─── Process variable AI suggestion ───────────────────────────────────────────
+function getProcessSuggestion(p) {
+  const issues = [];
+  if (Math.abs(p.temp - 200) > 15)
+    issues.push(`Temperatura ${p.temp > 200 ? '+' : ''}${(p.temp-200).toFixed(0)}°C de setpoint — riesgo de defectos`);
+  if (p.vibration > 0.62)
+    issues.push(`Vibración ${p.vibration.toFixed(2)}g — inspeccionar rodamientos`);
+  if (Math.abs(p.pressure - 120) > 22)
+    issues.push(`Presión ${p.pressure > 120 ? 'elevada' : 'baja'} (${p.pressure} bar) — verificar válvulas`);
+  if (p.speed > 90)
+    issues.push('Velocidad al límite — riesgo de desgaste prematuro');
+  return issues.length
+    ? issues.join(' · ')
+    : 'Parámetros dentro de zona óptima ±2σ. Sistema estable.';
+}
+
 // ─── Main Dashboard ───────────────────────────────────────────────────────────
 export default function Dashboard() {
   const { machines: machinesMap, csvFiles, activeCsvId, aiInsights, actions } = useData();
-  const machinesArr = Object.keys(machinesMap).length ? Object.values(machinesMap) : MOCK_MACHINES;
+  const isBackendConnected = Object.keys(machinesMap).length > 0;
 
   const [selectedMachine, setSelectedMachine] = useState('INJ-07');
   const [params, setParams] = useState({ temp:204, speed:78, pressure:124, vibration:0.42, torque:214 });
+  const [simMachines, setSimMachines] = useState(MOCK_MACHINES);
+
+  // Use backend data when available, otherwise local simulation
+  const machinesArr   = isBackendConnected ? Object.values(machinesMap) : simMachines;
+  const displayInsights = aiInsights.length ? aiInsights : generateLocalInsights(machinesArr);
+
+  // Refs so simulation tick always sees latest values without restarting the interval
+  const paramsRef   = useRef(params);
+  const selectedRef = useRef(selectedMachine);
+  useEffect(() => { paramsRef.current = params;         }, [params]);
+  useEffect(() => { selectedRef.current = selectedMachine; }, [selectedMachine]);
+
+  // Simulation tick — only when backend is offline
+  useEffect(() => {
+    if (isBackendConnected) return;
+    const id = setInterval(() => {
+      setSimMachines(prev => simTick(prev, paramsRef.current, selectedRef.current));
+    }, 2500);
+    return () => clearInterval(id);
+  }, [isBackendConnected]);
+
+  // When a CSV is loaded for any machine, seed that machine's sim values from the CSV last row
+  useEffect(() => {
+    setSimMachines(prev => prev.map(m => {
+      const csv = csvFiles[m.id];
+      if (!csv?.rows?.length) return m;
+      const vals = extractFromCsvRow(csv.rows[csv.rows.length - 1]);
+      const update = {};
+      if (vals.temp != null) update.temp = vals.temp;
+      if (vals.vib  != null) update.vib  = vals.vib;
+      if (vals.load != null) update.load = vals.load;
+      if (vals.oee  != null) update.oee  = vals.oee;
+      if (vals.rpm  != null) update.rpm  = vals.rpm;
+      return Object.keys(update).length ? { ...m, ...update } : m;
+    }));
+  }, [csvFiles]);
+
+  // Sync sliders when selected machine changes OR when its CSV arrives
+  useEffect(() => {
+    const csv = csvFiles[selectedMachine];
+    if (csv?.rows?.length) {
+      const vals = extractFromCsvRow(csv.rows[csv.rows.length - 1]);
+      setParams(p => ({
+        ...p,
+        ...(vals.temp != null ? { temp:      vals.temp } : {}),
+        ...(vals.vib  != null ? { vibration: vals.vib  } : {}),
+        ...(vals.load != null ? { speed:     vals.load } : {}),
+      }));
+    } else {
+      const m = machinesArr.find(x => x.id === selectedMachine);
+      if (!m) return;
+      setParams(p => ({
+        ...p,
+        temp:      parseFloat(m.temp.toFixed(1)),
+        vibration: parseFloat(m.vib.toFixed(2)),
+        speed:     parseFloat(m.load.toFixed(0)),
+      }));
+    }
+  }, [selectedMachine, csvFiles]);
 
   useEffect(() => { actions.fetchAIInsights().catch(() => {}); }, []);
 
@@ -260,15 +449,12 @@ export default function Dashboard() {
 
   const handleAddCsv = async (fileName, parsed, rawText) => {
     const id = detectMachineId(fileName, machinesArr);
-    // 1. Add to memory immediately
     actions.addCsv(id, { name: fileName, ...parsed });
-    // 2. Upload to Supabase Storage
     if (!supabase) return;
     const path = `${id}/${fileName}`;
     const blob = new Blob([rawText], { type: 'text/csv' });
     const { error: upErr } = await supabase.storage.from('csv-files').upload(path, blob, { upsert: true });
     if (upErr) { console.error('[Storage] upload:', upErr.message); return; }
-    // 3. Save metadata in csv_files table
     const { error: dbErr } = await supabase.from('csv_files').upsert({
       machine_id:   id,
       file_name:    fileName,
@@ -277,7 +463,6 @@ export default function Dashboard() {
       storage_path: path,
     }, { onConflict: 'machine_id' });
     if (dbErr) console.error('[DB] csv_files upsert:', dbErr.message);
-    else console.log(`[Supabase] CSV "${fileName}" guardado correctamente`);
   };
 
   const handleRemoveCsv = async (id) => {
@@ -290,16 +475,25 @@ export default function Dashboard() {
 
   const handleSelectCsv = (id) => actions.setActiveCsv(id);
 
+  const critCount = machinesArr.filter(m => m.status === 'CRITICAL').length;
+  const warnCount = machinesArr.filter(m => m.status === 'WARN').length;
+
   return (
     <div className="p-6 space-y-5">
       <PageHeader
         eyebrow="// CONTROL CENTER"
         title="Dashboard"
         desc="Histórico de máquinas, estado de planta y simulación de variables."
-        actions={null}
+        actions={
+          <div className="flex items-center gap-2 text-xs">
+            {critCount > 0 && <span className="px-2 py-1 rounded bg-crit-400/10 border border-crit-400/30 text-crit-400">{critCount} crítico{critCount>1?'s':''}</span>}
+            {warnCount > 0 && <span className="px-2 py-1 rounded bg-warn-400/10 border border-warn-400/30 text-warn-400">{warnCount} atención</span>}
+            {!critCount && !warnCount && <span className="text-grind-400 text-[10px] tracking-widest uppercase">Todos operando</span>}
+          </div>
+        }
       />
 
-      {/* 1. CSV historical data — main section */}
+      {/* 1. CSV historical data */}
       <CSVSection
         csvEntries={csvEntries}
         activeCsvId={activeCsvId}
@@ -310,46 +504,47 @@ export default function Dashboard() {
       />
 
       {/* 2. Machine status grid */}
-      <Card title="Estado de máquinas" subtitle={`${machinesArr.length} activos · línea Q1-Q4`} accent="cyan">
+      <Card
+        title="Estado de máquinas"
+        subtitle={`${machinesArr.length} equipos · ${Object.keys(csvFiles).length} con datos reales CSV · ${isBackendConnected ? 'backend online' : 'simulación local'}`}
+        accent="cyan">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {machinesArr.map(m => (
-            <MachineMini key={m.id} m={m} selected={selectedMachine} onSelect={setSelectedMachine}/>
+            <MachineMini key={m.id} m={m} selected={selectedMachine} onSelect={setSelectedMachine} hasCSV={!!csvFiles[m.id]}/>
           ))}
         </div>
       </Card>
 
       {/* 3. AI copilot + Process variables */}
       <div className="grid grid-cols-12 gap-4">
-        <Card title="Copiloto IA · Insights" subtitle="Recomendaciones automáticas en tiempo real"
+        <Card title="Copiloto IA · Insights" subtitle="Análisis automático en tiempo real"
               className="col-span-12 xl:col-span-5" accent="ai" glow="shadow-glowAi">
           <div className="space-y-2">
-            {(aiInsights.length ? aiInsights : [
-              {tag:'CARGANDO', c:'ai', t:'Consultando IA…', ago:'—', conf:'—'},
-            ]).map((x, i) => {
+            {displayInsights.map((x, i) => {
               const col = x.c==='red'?'#EF4444':(x.c==='amber'?'#F59E0B':(x.c==='green'?'#10B981':(x.c==='ai'?'#A855F7':'#22D3EE')));
               const chipColor = x.c==='red'?'red':(x.c==='amber'?'amber':(x.c==='green'?'green':'cyan'));
               return (
-              <div key={i} className="panel rounded-md p-3 flex items-start gap-3 hover:border-ai-400/30 transition">
-                <div className="shrink-0 w-8 h-8 rounded grid place-items-center"
-                     style={{color: col, background:`rgba(${x.c==='red'?'239,68,68':(x.c==='amber'?'245,158,11':(x.c==='green'?'16,185,129':(x.c==='ai'?'168,85,247':'34,211,238')))},0.12)`}}>
-                  {I.bot}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-1">
-                    <Chip color={chipColor}>{x.tag}</Chip>
-                    {x.conf && x.conf !== '—' && <span className="text-[10px] text-slate-500 num">conf {x.conf}</span>}
-                    <span className="text-[10px] text-slate-500 ml-auto">{x.ago}</span>
+                <div key={i} className="panel rounded-md p-3 flex items-start gap-3 hover:border-ai-400/30 transition">
+                  <div className="shrink-0 w-8 h-8 rounded grid place-items-center"
+                       style={{color: col, background:`rgba(${x.c==='red'?'239,68,68':(x.c==='amber'?'245,158,11':(x.c==='green'?'16,185,129':(x.c==='ai'?'168,85,247':'34,211,238')))},0.12)`}}>
+                    {I.bot}
                   </div>
-                  <div className="text-sm text-slate-200">{x.t}</div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <Chip color={chipColor}>{x.tag}</Chip>
+                      {x.conf && x.conf !== '—' && <span className="text-[10px] text-slate-500 num">conf {x.conf}</span>}
+                      <span className="text-[10px] text-slate-500 ml-auto">{x.ago}</span>
+                    </div>
+                    <div className="text-sm text-slate-200">{x.t}</div>
+                  </div>
                 </div>
-              </div>
               );
             })}
           </div>
         </Card>
 
         <Card title="Variables de proceso"
-              subtitle={`Setpoints · ${selectedMachine} — máquina seleccionada`}
+              subtitle={`Setpoints · ${selectedMachine} — clic en máquina para cambiar`}
               className="col-span-12 xl:col-span-7" accent="cyan">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
             <ParamSlider label="Temperatura" unit="°C"  min={150} max={260} step={1}    ideal={200} value={params.temp}      onChange={v=>setParams(p=>({...p,temp:v}))}/>
@@ -359,14 +554,10 @@ export default function Dashboard() {
             <ParamSlider label="Torque"      unit="N·m" min={120} max={320} step={1}    ideal={210} value={params.torque}    onChange={v=>setParams(p=>({...p,torque:v}))}/>
           </div>
           <div className="mt-4 panel rounded p-3 flex items-start gap-2 border border-ai-400/30">
-            <span className="text-ai-400 mt-0.5">{I.bot}</span>
+            <span className="text-ai-400 mt-0.5 shrink-0">{I.bot}</span>
             <div className="text-xs text-slate-300">
-              <div className="text-[10px] tracking-[0.25em] uppercase text-ai-400 mb-1">SUGERENCIA IA</div>
-              {Math.abs((params.temp-200)/10) > 0.5
-                ? 'Reducir temperatura a 200°C para minimizar defectos.'
-                : (Math.abs((params.vibration-0.4)*5) > 0.4
-                  ? 'Vibración alta: inspeccionar rodamientos.'
-                  : 'Parámetros dentro de zona óptima ±2σ.')}
+              <div className="text-[10px] tracking-[0.25em] uppercase text-ai-400 mb-1">SUGERENCIA IA · {selectedMachine}</div>
+              {getProcessSuggestion(params)}
             </div>
           </div>
         </Card>

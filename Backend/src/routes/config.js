@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { state, getMachinesArray, addEvent } from '../store/state.js';
+import { supabaseAdmin } from '../lib/supabase.js';
 
 const router = Router();
 
@@ -60,19 +61,29 @@ router.delete('/spc-limits/:id', (req, res) => {
 // GET /api/config/users
 router.get('/users', (_req, res) => res.json(state.users));
 
-// POST /api/config/users — invite user
-router.post('/users', (req, res) => {
+// POST /api/config/users — invite user (sends real email via Supabase)
+router.post('/users', async (req, res) => {
   const { name, role, email, access } = req.body;
   if (!name || !email) return res.status(400).json({ error: 'name y email requeridos' });
+
+  if (supabaseAdmin) {
+    const { error } = await supabaseAdmin.auth.admin.inviteUserByEmail(email, {
+      data:       { name, role: role || 'Operator', access: access || 'Operación' },
+      redirectTo: process.env.APP_URL || 'http://localhost:5174',
+    });
+    if (error) return res.status(400).json({ error: error.message });
+  }
+
   const user = {
     id:        `u${Date.now()}`,
-    name, role: role||'Operator', email, access: access||'Operación',
+    name, role: role || 'Operator', email, access: access || 'Operación',
     fa:        false,
-    lastLogin: 'Nunca',
-    avatar:    name.split(' ').map(x=>x[0]).join('').toUpperCase().slice(0,2),
+    lastLogin: 'Invitación enviada',
+    avatar:    name.split(' ').map(x => x[0]).join('').toUpperCase().slice(0, 2),
+    invited:   true,
   };
   state.users.push(user);
-  addEvent(`Usuario ${name} invitado`, 'info');
+  addEvent(`Usuario ${name} (${email}) invitado al sistema`, 'info');
   res.status(201).json(user);
 });
 

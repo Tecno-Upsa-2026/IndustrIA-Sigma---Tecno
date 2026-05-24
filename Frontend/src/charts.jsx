@@ -97,11 +97,11 @@ export function ControlChart({ data, mean, ucl, lcl, usl, lsl, w=720, h=240, col
         const warn = v > usl || v < lsl;
         return <circle key={i} cx={sx(i)} cy={sy(v)} r={ooc?4:2.5} fill={ooc?'#EF4444':(warn?'#F59E0B':color)} stroke={ooc?'#fff':'none'} strokeWidth={ooc?0.6:0} style={ooc?{filter:'drop-shadow(0 0 6px #EF4444)'}:{}}/>;
       })}
-      <text x={padL-4} y={sy(ucl)+3}  fill="#EF4444" fontSize="9" textAnchor="end" fontFamily="JetBrains Mono">UCL</text>
-      <text x={padL-4} y={sy(lcl)+3}  fill="#EF4444" fontSize="9" textAnchor="end" fontFamily="JetBrains Mono">LCL</text>
+      <text x={padL-4} y={sy(ucl)+3}  fill="#EF4444" fontSize="9" textAnchor="end" fontFamily="JetBrains Mono">LCS</text>
+      <text x={padL-4} y={sy(lcl)+3}  fill="#EF4444" fontSize="9" textAnchor="end" fontFamily="JetBrains Mono">LCI</text>
       <text x={padL-4} y={sy(mean)+3} fill="#22D3EE" fontSize="9" textAnchor="end" fontFamily="JetBrains Mono">X̄</text>
-      <text x={padL-4} y={sy(usl)+3}  fill="#F59E0B" fontSize="9" textAnchor="end" fontFamily="JetBrains Mono">USL</text>
-      <text x={padL-4} y={sy(lsl)+3}  fill="#F59E0B" fontSize="9" textAnchor="end" fontFamily="JetBrains Mono">LSL</text>
+      <text x={padL-4} y={sy(usl)+3}  fill="#F59E0B" fontSize="9" textAnchor="end" fontFamily="JetBrains Mono">LES</text>
+      <text x={padL-4} y={sy(lsl)+3}  fill="#F59E0B" fontSize="9" textAnchor="end" fontFamily="JetBrains Mono">LEI</text>
     </svg>
   );
 }

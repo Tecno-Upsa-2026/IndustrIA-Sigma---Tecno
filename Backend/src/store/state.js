@@ -146,12 +146,7 @@ export const state = {
     ],
   },
 
-  users: [
-    { id:'u1', name:'Luis Mendoza', role:'Plant Engineer', email:'l.mendoza@industria.io', access:'Total',     fa:true,  lastLogin:'hace 4m',  avatar:'LM' },
-    { id:'u2', name:'Ana Rivera',   role:'Quality Lead',   email:'a.rivera@industria.io',  access:'Quality',   fa:true,  lastLogin:'hace 1h',  avatar:'AR' },
-    { id:'u3', name:'Carlos Núñez', role:'Maintenance',    email:'c.nunez@industria.io',   access:'Mantto',    fa:false, lastLogin:'hace 6h',  avatar:'CN' },
-    { id:'u4', name:'Sofia Pérez',  role:'Operator B',     email:'s.perez@industria.io',   access:'Operación', fa:true,  lastLogin:'hace 12m', avatar:'SP' },
-  ],
+  users: [],
 
   currentUser: {
     id:'u1', name:'Luis Mendoza', firstName:'Luis', lastName:'Mendoza',

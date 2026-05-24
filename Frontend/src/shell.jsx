@@ -136,18 +136,6 @@ export function Sidebar({ active, onNavigate }){
         </div>
       </div>
 
-      {/* Plant selector */}
-      <div className="px-3 py-3 hairline-bottom">
-        <div className="flex items-center gap-2 px-2 py-2 panel rounded-md">
-          <div className="w-2 h-2 rounded-full bg-grind-400 pulse-dot"/>
-          <div className="flex-1">
-            <div className="text-[10px] tracking-[0.2em] uppercase text-slate-500">Planta</div>
-            <div className="text-xs font-medium text-white">Querétaro · MX-01</div>
-          </div>
-          <span className="text-slate-500">{I.caret}</span>
-        </div>
-      </div>
-
       <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-4">
         {Object.entries(grouped).map(([group, items])=>(
           <div key={group}>
