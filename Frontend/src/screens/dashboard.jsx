@@ -4,6 +4,7 @@ import { LiveWave } from '../charts'
 import { MACHINES as MOCK_MACHINES } from '../data'
 import { I } from '../icons'
 import { useData } from '../context/DataContext'
+import { supabase } from '../lib/supabase'
 
 // Auto-detect machine ID from filename (e.g. "INJ-07_historico.csv" → "INJ-07")
 function detectMachineId(fileName, machinesArr) {
@@ -53,7 +54,7 @@ function CSVSection({ csvEntries, activeCsvId, activeCsvData, onAdd, onSelect, o
     const file = e.target.files[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = ev => { onAdd(file.name, parseCSV(ev.target.result)); };
+    reader.onload = ev => { onAdd(file.name, parseCSV(ev.target.result), ev.target.result); };
     reader.readAsText(file);
     e.target.value = '';
   };
@@ -238,14 +239,55 @@ export default function Dashboard() {
 
   useEffect(() => { actions.fetchAIInsights().catch(() => {}); }, []);
 
-  const csvEntries   = Object.entries(csvFiles);           // [[id, data], ...]
+  // Load CSVs from Supabase Storage on mount
+  useEffect(() => {
+    if (!supabase) return;
+    supabase.from('csv_files').select('*').then(async ({ data, error }) => {
+      if (error || !data?.length) return;
+      for (const file of data) {
+        if (!file.storage_path) continue;
+        const { data: blob } = await supabase.storage.from('csv-files').download(file.storage_path);
+        if (!blob) continue;
+        const text = await blob.text();
+        const parsed = parseCSV(text);
+        actions.addCsv(file.machine_id, { name: file.file_name, ...parsed });
+      }
+    });
+  }, []);
+
+  const csvEntries    = Object.entries(csvFiles);
   const activeCsvData = csvFiles[activeCsvId] || null;
 
-  const handleAddCsv = (fileName, parsed) => {
+  const handleAddCsv = async (fileName, parsed, rawText) => {
     const id = detectMachineId(fileName, machinesArr);
+    // 1. Add to memory immediately
     actions.addCsv(id, { name: fileName, ...parsed });
+    // 2. Upload to Supabase Storage
+    if (!supabase) return;
+    const path = `${id}/${fileName}`;
+    const blob = new Blob([rawText], { type: 'text/csv' });
+    const { error: upErr } = await supabase.storage.from('csv-files').upload(path, blob, { upsert: true });
+    if (upErr) { console.error('[Storage] upload:', upErr.message); return; }
+    // 3. Save metadata in csv_files table
+    const { error: dbErr } = await supabase.from('csv_files').upsert({
+      machine_id:   id,
+      file_name:    fileName,
+      row_count:    parsed.rows.length,
+      columns:      parsed.header,
+      storage_path: path,
+    }, { onConflict: 'machine_id' });
+    if (dbErr) console.error('[DB] csv_files upsert:', dbErr.message);
+    else console.log(`[Supabase] CSV "${fileName}" guardado correctamente`);
   };
-  const handleRemoveCsv = (id) => actions.removeCsv(id);
+
+  const handleRemoveCsv = async (id) => {
+    actions.removeCsv(id);
+    if (!supabase) return;
+    const { data } = await supabase.from('csv_files').select('storage_path').eq('machine_id', id).single();
+    if (data?.storage_path) await supabase.storage.from('csv-files').remove([data.storage_path]);
+    await supabase.from('csv_files').delete().eq('machine_id', id);
+  };
+
   const handleSelectCsv = (id) => actions.setActiveCsv(id);
 
   return (

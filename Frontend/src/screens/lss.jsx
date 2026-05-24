@@ -1,17 +1,36 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { Card, Stat, PageHeader, Chip } from '../shell'
 import { SparkLine, ParetoChart, Histogram, ControlChart } from '../charts'
 import { PARETO, ISHIKAWA, SPC_DATA } from '../data'
 import { I } from '../icons'
 import { useData } from '../context/DataContext'
+import { generatePDF } from '../lib/pdf'
 
 export default function LSSScreen() {
   const { lss, metrics, spcData, actions } = useData();
+  const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
     actions.fetchLSS().catch(() => {});
     actions.fetchSPCAll().catch(() => {});
   }, []);
+
+  const handleExportPDF = async () => {
+    setExporting(true);
+    try {
+      await generatePDF({
+        elementId: 'lss-capture',
+        tipo:      'LSS',
+        nombre:    `Lean Six Sigma · INJ-07 · ${new Date().toLocaleDateString('es-MX')}`,
+        autor:     'Sistema',
+      });
+    } catch (e) {
+      console.error('[PDF]', e.message);
+      alert('Error al generar PDF: ' + e.message);
+    } finally {
+      setExporting(false);
+    }
+  };
 
   const liveSigma = metrics?.sigma || null;
   const liveYield = metrics?.yield || null;
@@ -46,7 +65,7 @@ export default function LSSScreen() {
   const mrMean = mr.reduce((a,b) => a+b, 0) / mr.length;
 
   return (
-    <div className="p-6 space-y-5">
+    <div id="lss-capture" className="p-6 space-y-5">
       <PageHeader
         eyebrow="// LEAN SIX SIGMA · SPC"
         title="Lean Six Sigma"
@@ -56,8 +75,11 @@ export default function LSSScreen() {
             <div className="panel rounded-md px-3 py-2 text-xs text-slate-300 hairline flex items-center gap-2">
               <span className="text-cyan2-400">{I.flask}</span> Proyecto · INJ-07 yield uplift
             </div>
-            <button className="px-3 py-2 text-xs rounded-md bg-cyan2-400/15 border border-cyan2-400/40 text-cyan2-400 flex items-center gap-2">
-              {I.download} PDF
+            <button onClick={handleExportPDF} disabled={exporting}
+                    className="px-3 py-2 text-xs rounded-md bg-cyan2-400/15 border border-cyan2-400/40 text-cyan2-400 flex items-center gap-2 disabled:opacity-50">
+              {exporting
+                ? <><span className="w-3 h-3 border-2 border-cyan2-400 border-t-transparent rounded-full animate-spin"/> Generando…</>
+                : <>{I.download} PDF</>}
             </button>
           </div>
         }
