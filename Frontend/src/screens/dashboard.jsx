@@ -82,26 +82,12 @@ function defectToSigma(defectPct) {
   return Math.max(1, Math.min(6, parseFloat((0.8406 + Math.sqrt(29.37 - 2.221 * Math.log(dpmo))).toFixed(2))));
 }
 
-// ─── Local mini sparkline ─────────────────────────────────────────────────────
 const CHART_COLORS = ['#22D3EE', '#10B981', '#F59E0B', '#A855F7', '#EF4444', '#3B82F6'];
-
-function MiniChart({ data, color = '#22D3EE' }) {
-  if (!data || data.length < 2) return null;
-  const min = Math.min(...data), max = Math.max(...data), range = max - min || 1;
-  const w = 200, h = 40, pad = 4;
-  const xs = data.map((_, i) => pad + (i / (data.length - 1)) * (w - pad * 2));
-  const ys = data.map(v => h - pad - ((v - min) / range) * (h - pad * 2));
-  const d  = xs.map((x, i) => `${i ? 'L' : 'M'}${x.toFixed(1)} ${ys[i].toFixed(1)}`).join(' ');
-  return (
-    <svg viewBox={`0 0 ${w} ${h}`} className="w-full" style={{ height: 40 }}>
-      <path d={d} fill="none" stroke={color} strokeWidth="1.5" style={{ filter: `drop-shadow(0 0 3px ${color})` }}/>
-    </svg>
-  );
-}
 
 // ─── CSV section ──────────────────────────────────────────────────────────────
 function CSVSection({ csvEntries, activeCsvId, activeCsvData, onAdd, onSelect, onRemove }) {
   const fileRef = useRef(null);
+  const [showTable, setShowTable] = useState(false);
   const data    = activeCsvData;
 
   const handleFile = (e) => {
@@ -136,6 +122,29 @@ function CSVSection({ csvEntries, activeCsvId, activeCsvData, onAdd, onSelect, o
 
   const numCols  = data ? getNumericCols(data.header, data.rows) : [];
   const lastRows = data ? data.rows.slice(-40) : [];
+  const variableCharts = data
+    ? numCols.map((col, i) => {
+        const vals = data.rows.map(r => parseFloat(r[col])).filter(v => !isNaN(v));
+        if (vals.length < 2) return null;
+        const { mean, std } = calcStats(vals);
+        const min = Math.min(...vals);
+        const max = Math.max(...vals);
+        const safeStd = Math.max(std, 0.0001);
+        return {
+          col,
+          color: CHART_COLORS[i % CHART_COLORS.length],
+          vals,
+          mean,
+          std,
+          min,
+          max,
+          ucl: mean + 3 * safeStd,
+          lcl: mean - 3 * safeStd,
+          usl: mean + 2 * safeStd,
+          lsl: mean - 2 * safeStd,
+        };
+      }).filter(Boolean)
+    : [];
 
   return (
     <Card title="Histórico de máquinas · datos reales"
@@ -143,6 +152,13 @@ function CSVSection({ csvEntries, activeCsvId, activeCsvData, onAdd, onSelect, o
           accent="cyan"
           action={
             <div className="flex items-center gap-2 flex-wrap">
+              {data && (
+                <button
+                  onClick={() => setShowTable(prev => !prev)}
+                  className="flex items-center gap-1 px-2 py-1 text-[10px] rounded bg-cyan2-400/15 border border-cyan2-400/40 text-cyan2-400 hover:bg-cyan2-400/25 transition">
+                  {showTable ? 'Ocultar datos' : 'Mostrar datos'}
+                </button>
+              )}
               {csvEntries.map(([id, f]) => (
                 <div key={id} className="flex items-center gap-1">
                   <button onClick={() => onSelect(id)}
@@ -159,54 +175,72 @@ function CSVSection({ csvEntries, activeCsvId, activeCsvData, onAdd, onSelect, o
             </div>
           }>
 
-      {numCols.length > 0 && (
-        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3 mb-4">
-          {numCols.slice(0, 6).map((col, i) => {
-            const vals = data.rows.map(r => parseFloat(r[col])).filter(v => !isNaN(v));
-            const last = vals[vals.length - 1];
-            const min  = Math.min(...vals), max = Math.max(...vals);
-            return (
-              <div key={col} className="panel rounded p-3">
-                <div className="text-[9px] uppercase tracking-widest text-slate-500 truncate">{col.replace(/_/g, ' ')}</div>
-                <div className="num text-lg mt-0.5" style={{ color: CHART_COLORS[i % CHART_COLORS.length] }}>
-                  {isNaN(last) ? '—' : last.toFixed(2)}
+      {variableCharts.length > 0 && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-4 mb-4">
+          {variableCharts.map(chart => (
+            <div key={chart.col} className="panel rounded p-3">
+              <div className="flex items-center justify-between gap-2 mb-2">
+                <div>
+                  <div className="text-[9px] uppercase tracking-widest text-slate-500 truncate">{chart.col.replace(/_/g, ' ')}</div>
+                  <div className="num text-sm text-white mt-0.5">{chart.vals[chart.vals.length - 1].toFixed(2)}</div>
                 </div>
-                <MiniChart data={vals.slice(-30)} color={CHART_COLORS[i % CHART_COLORS.length]}/>
-                <div className="flex justify-between text-[9px] text-slate-600 num mt-1">
-                  <span>↓{min.toFixed(1)}</span><span>↑{max.toFixed(1)}</span>
+                <div className="text-right text-[10px] text-slate-500 num">
+                  <div>μ {chart.mean.toFixed(2)}</div>
+                  <div>σ {chart.std.toFixed(2)}</div>
                 </div>
               </div>
-            );
-          })}
+              <div className="rounded border border-slate-700/60 bg-slate-950/40 p-2">
+                <ControlChart
+                  data={chart.vals.slice(-40)}
+                  mean={chart.mean}
+                  ucl={chart.ucl}
+                  lcl={chart.lcl}
+                  usl={chart.usl}
+                  lsl={chart.lsl}
+                  w={720}
+                  h={220}
+                  color={chart.color}
+                />
+              </div>
+              <div className="grid grid-cols-4 gap-2 text-[10px] text-slate-400 num mt-2">
+                <div><span className="text-slate-500">μ</span> {chart.mean.toFixed(2)}</div>
+                <div><span className="text-slate-500">σ</span> {chart.std.toFixed(2)}</div>
+                <div><span className="text-slate-500">min</span> {chart.min.toFixed(2)}</div>
+                <div><span className="text-slate-500">max</span> {chart.max.toFixed(2)}</div>
+              </div>
+            </div>
+          ))}
         </div>
       )}
 
-      <div className="overflow-x-auto">
-        <table className="w-full text-xs">
-          <thead className="text-[9px] tracking-widest uppercase text-slate-500">
-            <tr className="hairline-bottom">
-              <th className="text-left py-2 pr-3">#</th>
-              {data.header.map(h => <th key={h} className="text-left pr-3 whitespace-nowrap">{h.replace(/_/g, ' ')}</th>)}
-            </tr>
-          </thead>
-          <tbody>
-            {lastRows.map((row, i) => (
-              <tr key={i} className="hairline-bottom hover:bg-white/[0.02]">
-                <td className="py-1.5 pr-3 num text-slate-500">{data.rows.length - lastRows.length + i + 1}</td>
-                {data.header.map(h => {
-                  const v = row[h];
-                  const n = parseFloat(v);
-                  return (
-                    <td key={h} className="pr-3 num whitespace-nowrap text-slate-200">
-                      {!isNaN(n) ? n.toFixed(2) : v}
-                    </td>
-                  );
-                })}
+      {showTable && (
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead className="text-[9px] tracking-widest uppercase text-slate-500">
+              <tr className="hairline-bottom">
+                <th className="text-left py-2 pr-3">#</th>
+                {data.header.map(h => <th key={h} className="text-left pr-3 whitespace-nowrap">{h.replace(/_/g, ' ')}</th>)}
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody>
+              {lastRows.map((row, i) => (
+                <tr key={i} className="hairline-bottom hover:bg-white/[0.02]">
+                  <td className="py-1.5 pr-3 num text-slate-500">{data.rows.length - lastRows.length + i + 1}</td>
+                  {data.header.map(h => {
+                    const v = row[h];
+                    const n = parseFloat(v);
+                    return (
+                      <td key={h} className="pr-3 num whitespace-nowrap text-slate-200">
+                        {!isNaN(n) ? n.toFixed(2) : v}
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </Card>
   );
 }
