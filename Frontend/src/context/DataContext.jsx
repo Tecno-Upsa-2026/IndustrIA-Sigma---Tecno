@@ -345,10 +345,21 @@ export function DataProvider({ children }) {
       return data;
     }, []),
     chat: useCallback(async (message, conversationId, csvContext) => {
+      const csvMachineId = typeof csvContext === 'string'
+        ? csvContext
+        : csvContext?.machineId || null;
       const payload = typeof csvContext === 'string'
         ? { message, conversationId, csvMachineId: csvContext }
         : { message, conversationId, ...(csvContext ? { csvContext } : {}) };
       const res = await api.chat(payload);
+      if (res?.diagnostics?.machineId) {
+        dispatch({ type: 'SET_CSV_DIAGNOSTICS', machineId: res.diagnostics.machineId, v: res.diagnostics });
+      } else if (csvMachineId && res?.diagnosticsText) {
+        dispatch({ type: 'SET_CSV_DIAGNOSTICS', machineId: csvMachineId, v: { machineId: csvMachineId, text: res.diagnosticsText } });
+      }
+      if (res?.recommendations?.machineId) {
+        dispatch({ type: 'SET_RECOMMENDATIONS', machineId: res.recommendations.machineId, v: res.recommendations });
+      }
       const convs = await api.getConversations();
       dispatch({ type: 'SET_CONVERSATIONS', v: convs });
       return res;

@@ -4,6 +4,7 @@ import { calcGlobalMetrics } from '../simulation/metrics.js';
 import { supabase } from '../lib/supabase.js';
 import { chat, generateInsights } from '../services/llm/orchestrator.js';
 import { buildMachineDiagnostics, formatDiagnosticsForLLM, formatPlantDiagnosticsForLLM } from '../services/llm/csv-diagnostics.js';
+import { buildRecommendations } from '../services/llm/recommender.js';
 
 const router = Router();
 
@@ -14,10 +15,21 @@ function buildPlantContext({ csvMachineId } = {}) {
   const metrics  = calcGlobalMetrics();
   const diagnostics = machines.map(machine => buildMachineDiagnostics(machine.id)).filter(Boolean);
   const focusedDiagnostics = csvMachineId ? buildMachineDiagnostics(csvMachineId) : null;
+  const focusedRecommendations = csvMachineId ? buildRecommendations(csvMachineId) : null;
   const diagnosticText = diagnostics
     .map(diag => formatDiagnosticsForLLM(diag))
     .filter(text => /fuera de norma|alertas activas/i.test(text))
     .join('\n\n') || '  (todas las variables dentro de parámetros)';
+
+  const recommendationText = focusedRecommendations?.scenarios?.length
+    ? focusedRecommendations.scenarios.map((scenario, index) => {
+      const unit = scenario.unit ? ` ${scenario.unit}` : '';
+      const effects = scenario.effects?.length
+        ? `; efectos: ${scenario.effects.map(effect => `${effect.variable} ${effect.effect} (r=${effect.correlation.toFixed(2)})`).join(', ')}`
+        : '';
+      return `  ${index + 1}. ${scenario.variable}: ${scenario.from.toFixed(3)} -> ${scenario.to.toFixed(3)}${unit} (conf ${Math.round(scenario.confidence * 100)}%, Δdefectos ${scenario.impact.defectDelta.toFixed(2)}, ΔOEE ${scenario.impact.oeeDelta.toFixed(2)}, Δσ ${scenario.impact.sigmaDelta.toFixed(2)})${effects}`;
+    }).join('\n')
+    : '  (sin recomendaciones activas)';
 
   const simulatorText = state.simulator?.results && Object.keys(state.simulator.results).length
     ? `\n\nSIMULADOR ACTIVO:\n${Object.entries(state.simulator.results).map(([k, v]) => `  - ${k}: ${typeof v === 'number' ? v.toFixed?.(2) ?? v : v}`).join('\n')}`
@@ -51,6 +63,9 @@ Métricas globales:
 
 DIAGNÓSTICO POR VARIABLE:
 ${diagnosticText}
+
+RECOMENDACIONES ESTRUCTURADAS:
+${recommendationText}
 
 CORRELACIONES RELEVANTES:
 ${formatPlantDiagnosticsForLLM(machines.slice(0, 6).map(machine => machine.id))}
@@ -158,8 +173,15 @@ router.post('/chat', async (req, res) => {
 
   // Build system prompt
   const diagnostics = csvMachineId ? buildMachineDiagnostics(csvMachineId) : null;
+  const recommendations = (csvMachineId || diagnostics?.machineId)
+    ? buildRecommendations(csvMachineId || diagnostics?.machineId)
+    : null;
   const systemPrompt = buildPlantContext({ csvMachineId }) +
-    (!csvMachineId && csvContext ? `\n\nDATOS CSV LEGADO:\n${csvContext}` : '');
+    (!csvMachineId && csvContext ? `\n\nDATOS CSV LEGADO:\n${csvContext}` : '') +
+    (recommendations?.scenarios?.length ? `\n\nRECOMENDACIONES APLICABLES:\n${recommendations.scenarios.map((scenario, index) => {
+      const unit = scenario.unit ? ` ${scenario.unit}` : '';
+      return `  ${index + 1}. ${scenario.variable}: ${scenario.from.toFixed(3)} -> ${scenario.to.toFixed(3)}${unit} (conf ${Math.round(scenario.confidence * 100)}%)`;
+    }).join('\n')}` : '');
 
   // Get history from Supabase or memory
   const dbHistory = await dbGetHistory(convId, 10);
@@ -168,7 +190,12 @@ router.post('/chat', async (req, res) => {
     content: m.content || m.t || '',
   }));
 
-  const aiResult = await chat(history, systemPrompt, diagnostics || csvContext || null);
+  const aiResult = await chat(history, systemPrompt, {
+    diagnostics,
+    recommendations,
+    csvMachineId,
+    csvContext,
+  });
   const text = aiResult.text || 'No se pudo generar una respuesta.';
 
   // Save AI response
@@ -176,7 +203,15 @@ router.post('/chat', async (req, res) => {
   const aiMsg = { role: 'ai', t: text, ts: Date.now() };
   memConv.messages.push(aiMsg);
 
-  res.json({ conversationId: convId, response: aiMsg, provider: aiResult.provider, mode: aiResult.mode });
+  res.json({
+    conversationId: convId,
+    response: aiMsg,
+    provider: aiResult.provider,
+    mode: aiResult.mode,
+    diagnostics,
+    diagnosticsText: diagnostics ? formatDiagnosticsForLLM(diagnostics) : null,
+    recommendations,
+  });
 });
 
 // GET /api/ai/insights

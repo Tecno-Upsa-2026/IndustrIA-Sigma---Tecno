@@ -31,7 +31,7 @@ function buildRuleBasedInsights() {
   ].filter(Boolean).slice(0, 4);
 }
 
-async function tryProviders(messages, systemPrompt, csvContext, options = {}) {
+async function tryProviders(messages, systemPrompt, context, options = {}) {
   const preparedMessages = [{ role: 'system', content: systemPrompt }, ...messages];
   for (const providerConfig of PROVIDERS) {
     try {
@@ -46,11 +46,11 @@ async function tryProviders(messages, systemPrompt, csvContext, options = {}) {
     }
   }
 
-  return ruleBasedResponse(preparedMessages, systemPrompt, csvContext);
+  return ruleBasedResponse(preparedMessages, systemPrompt, context);
 }
 
-export async function chat(messages, systemPrompt, csvContext) {
-  return tryProviders(messages, systemPrompt, csvContext, { timeoutMs: 15000, maxTokens: 700, temperature: 0.4 });
+export async function chat(messages, systemPrompt, context = null) {
+  return tryProviders(messages, systemPrompt, context, { timeoutMs: 15000, maxTokens: 700, temperature: 0.4 });
 }
 
 export async function generateInsights(systemPrompt) {

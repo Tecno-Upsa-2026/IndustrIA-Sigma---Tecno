@@ -143,7 +143,10 @@ router.post('/compare', (req, res) => {
   if (!result) return res.status(404).json({ error: 'Máquina no encontrada' });
 
   state.compareResults[machineId] = result;
-  res.json(result);
+  res.json({
+    ...result,
+    recommendedParams: recommendedParams || result.recommendedParams || {},
+  });
 });
 
 export default router;

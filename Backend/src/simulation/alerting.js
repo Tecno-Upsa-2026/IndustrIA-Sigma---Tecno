@@ -1,12 +1,15 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // Alert generation logic.
-// Called every tick to check thresholds and emit/clear alerts.
+// Historical alerts run on a 5-tick cadence using a rolling 5-sample average.
+// Alerts require 3 consecutive calm checks before they are resolved.
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { buildMachineDiagnostics } from '../services/llm/csv-diagnostics.js';
 import { state, MACHINE_PROFILES, nextAlertId, addEvent } from '../store/state.js';
 import { broadcaster } from '../ws/broadcaster.js';
 
 const activeThresholds = {};
+const resolutionCounters = {};
 
 function key(machineId, type) {
   return `${machineId}:${type}`;
@@ -18,9 +21,28 @@ function formatTime(ts) {
   return `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
 }
 
-function raiseAlert(machine, type, sev, title, detail, ai, now) {
+function findActiveAlert(machineId, type) {
+  return state.alerts.find(alert => alert.machine === machineId && alert.type === type && alert.status === 'active') || null;
+}
+
+function raiseAlert(machine, type, sev, title, detail, ai, source, now) {
+  const existing = findActiveAlert(machine.id, type);
+  if (existing) {
+    existing.sev = sev;
+    existing.title = title;
+    existing.detail = detail;
+    existing.ai = ai;
+    existing.source = source;
+    existing.ts = now;
+    existing.time = formatTime(now);
+    existing.status = 'active';
+    broadcaster.emit({ type: 'ALERT_UPDATE', alert: existing });
+    return existing;
+  }
+
   const alert = {
     id: nextAlertId(),
+    type,
     sev,
     machine: machine.id,
     title,
@@ -28,145 +50,139 @@ function raiseAlert(machine, type, sev, title, detail, ai, now) {
     time: formatTime(now),
     ts: now,
     ai,
+    source,
     status: 'active',
   };
 
   state.alerts.unshift(alert);
   activeThresholds[key(machine.id, type)] = alert.id;
+  resolutionCounters[key(machine.id, type)] = 0;
   addEvent(title, sev === 'CRITICAL' ? 'critical' : 'warn');
   broadcaster.emit({ type: 'ALERT_NEW', alert });
+  return alert;
 }
 
 function resolveAlert(machineId, type) {
-  delete activeThresholds[key(machineId, type)];
-  addEvent(`Condición resuelta ${machineId}`, 'ok');
-}
+  const alertKey = key(machineId, type);
+  delete activeThresholds[alertKey];
+  delete resolutionCounters[alertKey];
 
-function getHistoricalLimits(profile, variableName) {
-  return profile?.variables?.[variableName]?.historicalControlLimits
-    || profile?.historicalControlLimits?.[variableName]
-    || null;
+  const alert = findActiveAlert(machineId, type);
+  if (alert) {
+    alert.status = 'closed';
+    alert.resolvedAt = Date.now();
+  }
+
+  addEvent(`Condición resuelta ${machineId}`, 'ok');
+  broadcaster.emit({ type: 'ALERT_RESOLVED', machineId, alertType: type, alertId: alert?.id || null });
 }
 
 function getSeries(machineId, variableName) {
   return state.machineHistory?.[machineId]?.[variableName] || [];
 }
 
-function checkHistoricalThresholds(machine, profile, variableName, value, now) {
-  const limits = getHistoricalLimits(profile, variableName);
-  const series = getSeries(machine.id, variableName);
-  if (!limits || series.length < 6) return;
-
-  const mean = limits.mean ?? limits.center ?? profile.variables?.[variableName]?.base_value ?? value;
-  const sd = Math.max(limits.std ?? profile.variables?.[variableName]?.noise ?? 0.01, 0.01);
-  const z = (value - mean) / sd;
-  const absZ = Math.abs(z);
-
-  const critKey = key(machine.id, `${variableName}_hist_crit`);
-  const highKey = key(machine.id, `${variableName}_hist_high`);
-  const medKey = key(machine.id, `${variableName}_hist_med`);
-
-  if (absZ > 3) {
-    if (!activeThresholds[critKey]) {
-      raiseAlert(
-        machine,
-        `${variableName}_hist_crit`,
-        'CRITICAL',
-        `${variableName} fuera de 3σ — ${machine.id}`,
-        `${variableName}=${value.toFixed(3)} supera la media histórica en ${absZ.toFixed(2)}σ.`,
-        'Revisar la deriva del proceso y validar la causa asignable contra el histórico calibrado.',
-        now,
-      );
-    }
-    return;
-  }
-  if (activeThresholds[critKey]) resolveAlert(machine.id, `${variableName}_hist_crit`);
-
-  const last7 = series.slice(-7);
-  if (last7.length === 7) {
-    const sameSide = last7.every(sample => sample > mean) || last7.every(sample => sample < mean);
-    if (sameSide) {
-      if (!activeThresholds[highKey]) {
-        raiseAlert(
-          machine,
-          `${variableName}_hist_high`,
-          'HIGH',
-          `${variableName} con deriva histórica — ${machine.id}`,
-          `7 puntos consecutivos del mismo lado de la media histórica para ${variableName}.`,
-          'Aplicar revisión de causa especial y ajustar setpoint o mantenimiento preventivo.',
-          now,
-        );
-      }
-    } else if (activeThresholds[highKey]) {
-      resolveAlert(machine.id, `${variableName}_hist_high`);
-    }
-  }
-
-  const last6 = series.slice(-6);
-  if (last6.length === 6) {
-    let increasing = true;
-    let decreasing = true;
-    for (let i = 1; i < last6.length; i++) {
-      if (!(last6[i] > last6[i - 1])) increasing = false;
-      if (!(last6[i] < last6[i - 1])) decreasing = false;
-    }
-    if (increasing || decreasing) {
-      if (!activeThresholds[medKey]) {
-        raiseAlert(
-          machine,
-          `${variableName}_hist_med`,
-          'MEDIUM',
-          `${variableName} con tendencia monotónica — ${machine.id}`,
-          `6 puntos consecutivos ${increasing ? 'ascendentes' : 'descendentes'} en ${variableName}.`,
-          'Monitorear tendencia y revisar si hay un cambio de proceso o instrumento.',
-          now,
-        );
-      }
-    } else if (activeThresholds[medKey]) {
-      resolveAlert(machine.id, `${variableName}_hist_med`);
-    }
-  }
+function average(values) {
+  if (!values.length) return 0;
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
 }
 
-function checkGenericThreshold(machine, profile, variableName, value, now) {
-  const variable = profile?.variables?.[variableName];
-  if (!variable) return;
-  if (value === 0 && !machine.vars?.[variableName]) return;
+function historicalDecision(variable, windowAvg) {
+  const highCrit = windowAvg >= variable.ucl;
+  const lowCrit = windowAvg <= variable.lcl;
+  const highWarn = windowAvg >= variable.warnUpper;
+  const lowWarn = windowAvg <= variable.warnLower;
 
-  const inverted = ['precision', 'hardness', 'residual_humidity', 'thermal_uniformity', 'color_uniformity', 'stability'].includes(variableName);
-  const warnKey = key(machine.id, `${variableName}_warn`);
-  const critKey = key(machine.id, `${variableName}_crit`);
+  if (highCrit || lowCrit) {
+    return {
+      sev: 'CRITICAL',
+      side: highCrit ? 'alta' : 'baja',
+      source: 'historical-window',
+      title: `${variable.name} fuera de 3σ — ${variable.machineId}`,
+    };
+  }
 
-  const warnBreached = inverted ? value <= variable.warn : value >= variable.warn;
-  const critBreached = inverted ? value <= variable.crit : value >= variable.crit;
+  if (highWarn || lowWarn) {
+    return {
+      sev: 'HIGH',
+      side: highWarn ? 'alta' : 'baja',
+      source: 'historical-window',
+      title: `${variable.name} en zona de advertencia — ${variable.machineId}`,
+    };
+  }
 
-  if (critBreached && !activeThresholds[critKey]) {
+  return null;
+}
+
+function updateResolutionState(machineId, type, breached) {
+  const alertKey = key(machineId, type);
+  if (breached) {
+    resolutionCounters[alertKey] = 0;
+    return false;
+  }
+
+  if (!activeThresholds[alertKey]) return false;
+  resolutionCounters[alertKey] = (resolutionCounters[alertKey] || 0) + 1;
+  if (resolutionCounters[alertKey] < 3) return false;
+
+  resolveAlert(machineId, type);
+  return true;
+}
+
+function checkAnomaly(machine, now) {
+  const anomalyKey = key(machine.id, 'anomaly');
+  const anomalyAlert = findActiveAlert(machine.id, 'anomaly');
+  const breached = machine.anomalyScore != null && machine.anomalyScore > 0.7;
+
+  if (breached) {
     raiseAlert(
       machine,
-      `${variableName}_crit`,
+      'anomaly',
       'CRITICAL',
-      `${variableName} crítico — ${machine.id}`,
-      `${variableName} ${value.toFixed(2)} supera el límite crítico ${variable.crit}.`,
-      'Revisar el proceso y validar la calibración del parámetro.',
+      `Anomalía detectada — ${machine.id}`,
+      `El score de anomalía llegó a ${machine.anomalyScore.toFixed(2)}.`,
+      'Revisar la serie temporal y los últimos cambios de setpoint.',
+      'anomaly',
       now,
     );
-  } else if (!critBreached && activeThresholds[critKey]) {
-    resolveAlert(machine.id, `${variableName}_crit`);
+    resolutionCounters[anomalyKey] = 0;
+    return;
   }
 
-  if (warnBreached && !activeThresholds[warnKey] && !critBreached) {
+  if (anomalyAlert) updateResolutionState(machine.id, 'anomaly', false);
+}
+
+function checkHistoricalWindow(machine, variable, now) {
+  const series = getSeries(machine.id, variable.name);
+  if (series.length < 5) return;
+
+  const window = series.slice(-5);
+  const windowAvg = average(window);
+  const decision = historicalDecision(variable, windowAvg);
+  const alertType = `${variable.name}_window`;
+
+  if (decision) {
+    const sigmaDelta = (windowAvg - variable.historicalMean) / Math.max(variable.historicalStd, 0.01);
+    const unit = variable.unit ? ` ${variable.unit}` : '';
+    const detail = `Media móvil 5 pts = ${windowAvg.toFixed(3)}${unit} · media histórica ${variable.historicalMean.toFixed(3)}${unit} · ${sigmaDelta.toFixed(2)}σ.`;
+    const ai = decision.sev === 'CRITICAL'
+      ? 'Aislar la variable, confirmar causa asignable y ajustar el proceso antes del siguiente bloque de producción.'
+      : 'Ajustar setpoint o intervenir mantenimiento preventivo antes de que la deriva alcance 3σ.';
+
     raiseAlert(
       machine,
-      `${variableName}_warn`,
-      'HIGH',
-      `${variableName} elevado — ${machine.id}`,
-      `${variableName} ${value.toFixed(2)} excede el umbral de advertencia ${variable.warn}.`,
-      'Monitorear tendencia y preparar corrección preventiva.',
+      alertType,
+      decision.sev,
+      decision.title,
+      detail,
+      ai,
+      decision.source,
       now,
     );
-  } else if (!warnBreached && activeThresholds[warnKey]) {
-    resolveAlert(machine.id, `${variableName}_warn`);
+    resolutionCounters[key(machine.id, alertType)] = 0;
+    return;
   }
+
+  updateResolutionState(machine.id, alertType, false);
 }
 
 export function checkThresholds(machine) {
@@ -174,34 +190,17 @@ export function checkThresholds(machine) {
   if (!profile || machine.status === 'IDLE') return;
 
   const now = Date.now();
+  checkAnomaly(machine, now);
 
-  if (machine.anomalyScore != null && machine.anomalyScore > 0.7) {
-    const anomalyKey = key(machine.id, 'anomaly');
-    if (!activeThresholds[anomalyKey]) {
-      raiseAlert(
-        machine,
-        'anomaly',
-        'CRITICAL',
-        `Anomalía detectada — ${machine.id}`,
-        `El score de anomalía llegó a ${machine.anomalyScore.toFixed(2)}.`,
-        'Revisar la serie temporal y los últimos cambios de setpoint.',
-        now,
-      );
-    }
-  } else if (activeThresholds[key(machine.id, 'anomaly')]) {
-    resolveAlert(machine.id, 'anomaly');
-  }
+  const shouldRunHistorical = (Number(state.tick || 0) % 5) === 0;
+  if (!shouldRunHistorical) return;
 
-  checkGenericThreshold(machine, profile, 'temperature', machine.temp ?? 0, now);
-  checkGenericThreshold(machine, profile, 'vibration', machine.vib ?? 0, now);
-  checkGenericThreshold(machine, profile, 'pressure', machine.pressure ?? machine.vars?.pressure?.value ?? 0, now);
-  checkGenericThreshold(machine, profile, 'precision', machine.precision ?? machine.vars?.precision?.value ?? 0, now);
-  checkGenericThreshold(machine, profile, 'hardness', machine.hardness ?? machine.vars?.hardness?.value ?? 0, now);
+  const diagnostics = buildMachineDiagnostics(machine.id);
+  const flaggedVariables = diagnostics?.flaggedVariables || [];
+  if (!flaggedVariables.length) return;
 
-  for (const [variableName, entry] of Object.entries(machine.vars || {})) {
-    const current = entry?.value;
-    if (!Number.isFinite(current)) continue;
-    checkHistoricalThresholds(machine, profile, variableName, current, now);
+  for (const variable of flaggedVariables) {
+    checkHistoricalWindow(machine, variable, now);
   }
 }
 

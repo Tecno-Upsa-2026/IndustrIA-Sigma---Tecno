@@ -1,7 +1,8 @@
 // WebSocket client with automatic reconnection.
-// Connects to /ws (proxied by Vite to ws://localhost:3001/ws).
+// Connects directly to the backend so Vite does not need to proxy the socket.
 
-const WS_URL = `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`;
+const WS_URL = import.meta.env.VITE_WS_BASE
+  || `${location.protocol === 'https:' ? 'wss' : 'ws'}://127.0.0.1:3001/ws`;
 const RECONNECT_DELAY = 2000;
 const MAX_RECONNECT_DELAY = 30000;
 

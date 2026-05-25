@@ -17,100 +17,6 @@ function pearsonCorr(xs, ys) {
   return da && db ? num/(da*db) : 0;
 }
 
-// ─── Detect statistical anomalies from a CSV file ────────────────────────────
-function detectCSVAlerts(csvData, machineId) {
-  if (!csvData?.rows?.length || csvData.rows.length < 5) return [];
-  const { header, rows } = csvData;
-  const source = machineId || csvData.name?.replace(/\.\w+$/, '') || 'CSV';
-
-  const numCols = header.filter(h =>
-    h.toLowerCase() !== 'fecha_hora' && !isNaN(parseFloat(rows[0]?.[h]))
-  );
-
-  const alerts = [];
-  let seq = 1000;
-  const now = new Date().toLocaleTimeString('es-MX', { hour:'2-digit', minute:'2-digit', second:'2-digit' });
-
-  numCols.forEach(col => {
-    const vals = rows.map(r => parseFloat(r[col])).filter(v => !isNaN(v));
-    if (vals.length < 5) return;
-
-    const mean = vals.reduce((a,b) => a+b, 0) / vals.length;
-    const sd   = Math.sqrt(vals.reduce((a,b) => a+(b-mean)**2, 0) / vals.length);
-    if (sd < 1e-9) return;
-
-    const ucl  = mean + 3*sd;
-    const lcl  = mean - 3*sd;
-    const wh   = mean + 2*sd;
-    const wl   = mean - 2*sd;
-    const last = vals[vals.length - 1];
-    const label = col.replace(/_/g, ' ');
-    const sigmas = ((last - mean) / sd).toFixed(1);
-
-    const base = { machine: source, col, vals, mean, sd, ucl, lcl, time: now };
-
-    // ── OOC: outside ±3σ (CRITICAL) ──────────────────────────────────────────
-    if (last > ucl) {
-      alerts.push({ ...base, id:`CSV-${seq++}`, sev:'CRITICAL',
-        title: `${label} — límite superior excedido`,
-        detail: `Último ${last.toFixed(3)} > LCS ${ucl.toFixed(3)} (${sigmas}σ sobre media).`,
-        ai: `Acción inmediata — ${label} = ${last.toFixed(3)} supera LCS en ${(last-ucl).toFixed(3)} unidades.\n• Verificar causa asignable: desgaste, cambio de lote o falla de actuador.\n• Si el valor continúa subiendo, detener proceso.\n• MTTR estimado: 15–25 min con técnico asignado.\n• Costo evitable estimado: 8–12 % en defectos si se actúa en < 2 h.`
-      });
-    } else if (last < lcl) {
-      alerts.push({ ...base, id:`CSV-${seq++}`, sev:'CRITICAL',
-        title: `${label} — límite inferior excedido`,
-        detail: `Último ${last.toFixed(3)} < LCI ${lcl.toFixed(3)} (${Math.abs(sigmas)}σ bajo media).`,
-        ai: `Acción inmediata — caída crítica en ${label}.\n• Verificar falla de sensor, pérdida de presión o cambio de material.\n• Detener y tomar muestra de verificación.\n• Escalar a ingeniería si persiste > 5 min.`
-      });
-    }
-    // ── Warning zone ±2σ–3σ (HIGH) ───────────────────────────────────────────
-    else if (last > wh) {
-      alerts.push({ ...base, id:`CSV-${seq++}`, sev:'HIGH',
-        title: `${label} en zona de advertencia alta`,
-        detail: `Valor ${last.toFixed(3)} entre +2σ y +3σ (${sigmas}σ).`,
-        ai: `Monitoreo urgente — ${label} en zona alta.\n• Ajustar setpoint o verificar condición de equipo.\n• Próxima muestra en 5–10 min.\n• Si alcanza LCS = ${ucl.toFixed(3)}, escalar de inmediato.`
-      });
-    } else if (last < wl) {
-      alerts.push({ ...base, id:`CSV-${seq++}`, sev:'HIGH',
-        title: `${label} en zona de advertencia baja`,
-        detail: `Valor ${last.toFixed(3)} entre -2σ y -3σ (${sigmas}σ).`,
-        ai: `Monitoreo urgente — ${label} en zona baja.\n• Verificar parámetros de proceso.\n• Tomar acción correctiva si la tendencia continúa.`
-      });
-    }
-
-    // ── WECO R2: 7 puntos consecutivos del mismo lado de la media ────────────
-    if (vals.length >= 7) {
-      const last7   = vals.slice(-7);
-      const allAbove = last7.every(v => v > mean);
-      const allBelow = last7.every(v => v < mean);
-      if ((allAbove || allBelow) && !alerts.find(a => a.col === col && (a.sev === 'CRITICAL' || a.sev === 'HIGH'))) {
-        alerts.push({ ...base, id:`CSV-${seq++}`, sev:'HIGH',
-          title: `Deriva en ${label} — WECO Regla 2`,
-          detail: `7 puntos consecutivos ${allAbove?'sobre':'bajo'} la media (${mean.toFixed(3)}).`,
-          ai: `Deriva sistemática en ${label} (WECO R2).\n• Causa especial probable: ajuste de operario, desgaste progresivo o cambio de proveedor.\n• Aplicar análisis de cambio de proceso.\n• Revisar últimas acciones de mantenimiento en bitácora.`
-        });
-      }
-    }
-
-    // ── WECO R3: 6 puntos consecutivos en tendencia ───────────────────────────
-    if (vals.length >= 6 && !alerts.find(a => a.col === col)) {
-      const last6 = vals.slice(-6);
-      const asc  = last6.every((v,i) => i===0 || v > last6[i-1]);
-      const desc = last6.every((v,i) => i===0 || v < last6[i-1]);
-      if (asc || desc) {
-        alerts.push({ ...base, id:`CSV-${seq++}`, sev:'MEDIUM',
-          title: `Tendencia ${asc?'creciente':'decreciente'} en ${label}`,
-          detail: `6 puntos consecutivos ${asc?'ascendentes':'descendentes'}. Regla WECO 3.`,
-          ai: `Tendencia ${asc?'ascendente':'descendente'} en ${label} (WECO R3).\n• Investigar causa especial antes de que alcance la zona de control.\n• Verificar programa de mantenimiento preventivo.`
-        });
-      }
-    }
-  });
-
-  const order = { CRITICAL:0, HIGH:1, MEDIUM:2, LOW:3 };
-  return alerts.sort((a,b) => order[a.sev] - order[b.sev]);
-}
-
 // ─── Real correlations between CSV columns ────────────────────────────────────
 function computeCorrelations(csvData, targetCol) {
   if (!csvData?.rows?.length || !targetCol) return null;
@@ -175,22 +81,6 @@ function matchAlertToColumn(alert, csvData) {
     }
   }
   return numCols[0] || null;
-}
-
-// ─── CSV context for the AI chat ─────────────────────────────────────────────
-function buildCsvContext(data) {
-  if (!data) return null;
-  const { header, rows, name } = data;
-  const numCols = header.filter(h => !isNaN(parseFloat(rows[0]?.[h])));
-  const stats = numCols.map(col => {
-    const vals = rows.map(r => parseFloat(r[col])).filter(v => !isNaN(v));
-    if (!vals.length) return null;
-    const mean = vals.reduce((a, b) => a + b, 0) / vals.length;
-    return `${col}: min=${Math.min(...vals).toFixed(2)}, max=${Math.max(...vals).toFixed(2)}, media=${mean.toFixed(2)}, último=${vals[vals.length-1].toFixed(2)}`;
-  }).filter(Boolean).join('\n');
-  const lastRows = rows.slice(-30);
-  const csvText  = [header.join(','), ...lastRows.map(r => header.map(h => r[h]).join(','))].join('\n');
-  return `Archivo: ${name} (${rows.length} registros)\nEstadísticas:\n${stats}\n\nÚltimas ${lastRows.length} filas:\n${csvText}`;
 }
 
 export default function AIAlertsScreen() {

@@ -1,5 +1,6 @@
 import { state, getMachinesArray, MACHINE_PROFILES } from '../../store/state.js';
 import { buildMachineDiagnostics } from './csv-diagnostics.js';
+import { buildRecommendations } from './recommender.js';
 
 function pickRelevantMachine(query) {
   const text = (query || '').toLowerCase();
@@ -36,14 +37,13 @@ function summariseMachine(machine) {
   ].filter(Boolean).join(' | ');
 }
 
-export function ruleBasedResponse(messages, systemPrompt, csvContext) {
+export function ruleBasedResponse(messages, systemPrompt, context) {
   const lastUser = [...messages].reverse().find(message => message.role === 'user')?.content || '';
   const machine = pickRelevantMachine(lastUser);
   const text = lastUser.toLowerCase();
   const metrics = state.machines;
-  const diagnostics = csvContext && typeof csvContext === 'object' && csvContext.machineId
-    ? csvContext
-    : buildMachineDiagnostics(machine?.id);
+  const diagnostics = context?.diagnostics || (context?.machineId ? buildMachineDiagnostics(context.machineId) : buildMachineDiagnostics(machine?.id));
+  const recommendations = context?.recommendations || (diagnostics?.machineId ? buildRecommendations(diagnostics.machineId) : machine?.id ? buildRecommendations(machine.id) : null);
 
   const lines = [];
   if (text.includes('temperatura')) {
@@ -75,6 +75,11 @@ export function ruleBasedResponse(messages, systemPrompt, csvContext) {
     lines.push(`Señal principal: ${top.name} en ${top.sigmaDelta.toFixed(1)}σ, correlaciones: ${top.correlatedWith.slice(0, 2).map(item => `${item.name}(r=${item.corr.toFixed(2)})`).join(', ') || 'sin correlaciones fuertes'}.`);
   }
 
+  if (recommendations?.scenarios?.length) {
+    const topScenario = recommendations.scenarios[0];
+    lines.push(`Recomendación principal: ajustar ${topScenario.variable} de ${topScenario.from.toFixed(3)} a ${topScenario.to.toFixed(3)}${topScenario.unit ? ` ${topScenario.unit}` : ''} para mover el proceso hacia la media histórica.`);
+  }
+
   if (!lines.length) {
     lines.push(`La máquina más relevante ahora es ${machine?.id || 'N/D'}: ${summariseMachine(machine)}.`);
   }
@@ -84,7 +89,7 @@ export function ruleBasedResponse(messages, systemPrompt, csvContext) {
 
   lines.push(`Alertas activas: ${state.alerts.filter(alert => alert.status !== 'closed').length} (críticas: ${activeCriticals}, warnings: ${activeWarnings}).`);
 
-  if (csvContext) {
+  if (context) {
     lines.push('Usé el contexto CSV adjunto como referencia adicional para interpretar la respuesta.');
   }
 

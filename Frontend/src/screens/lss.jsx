@@ -68,13 +68,17 @@ const CSV_META_COLS = new Set([
   'quality_target','quality_usl','quality_lsl','quality_cp','process',
 ]);
 
+function hasNumericValue(rows, col) {
+  return rows.some(row => !isNaN(parseFloat(row?.[col])));
+}
+
 // ─── Pareto from CSV ──────────────────────────────────────────────────────────
 function computeCSVPareto(csvData) {
   if (!csvData?.rows?.length) return null;
   const numCols = csvData.header.filter(h =>
     !CSV_META_COLS.has(h.toLowerCase())
     && h.toLowerCase() !== 'fecha_hora'
-    && !isNaN(parseFloat(csvData.rows[0]?.[h]))
+    && hasNumericValue(csvData.rows, h)
   );
   // Quality column to correlate against (prefer defectos, else yield inverted)
   const qualCol = numCols.find(h => /defecto|defect/i.test(h))
@@ -123,7 +127,7 @@ function buildCSVIshikawa(csvData, problem) {
   const numCols = csvData.header.filter(h =>
     !CSV_META_COLS.has(h.toLowerCase())
     && h.toLowerCase() !== 'fecha_hora'
-    && !isNaN(parseFloat(csvData.rows[0]?.[h]))
+    && hasNumericValue(csvData.rows, h)
   );
   // Compute σ and CV per column
   const stats = {};
@@ -296,7 +300,8 @@ export default function LSSScreen() {
   const numericCols = activeCSV
     ? activeCSV.header.filter(h =>
         h.toLowerCase() !== 'fecha_hora' &&
-        !isNaN(parseFloat(activeCSV.rows[0]?.[h]))
+        h !== 'ts' &&
+        activeCSV.rows.some(row => !isNaN(parseFloat(row?.[h])))
       )
     : [];
 

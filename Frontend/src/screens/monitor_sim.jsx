@@ -145,6 +145,13 @@ export default function MonitorSimScreen() {
   };
 
   // Resync sliders from last CSV row
+
+  const applyRecommendationParams = async (recommendedParams) => {
+    if (!recommendedParams) return;
+    const nextParams = { ...params, ...recommendedParams };
+    setParams(nextParams);
+    await actions.updateSimParams({ machineId: selected, vars: nextParams }).catch(() => {});
+  };
   const handleResyncFromCsv = () => {
     if (!csvData?.rows?.length || !machine?.vars) return;
     const lastRow = csvData.rows[csvData.rows.length - 1];
@@ -428,6 +435,25 @@ export default function MonitorSimScreen() {
           {activeCompare?.improvement && (
             <div className="mt-3 text-xs text-slate-400">
               Mejora estimada: defectos {activeCompare.improvement.defectPct.toFixed(2)}%, OEE {activeCompare.improvement.oeePts.toFixed(2)} pts, sigma {activeCompare.improvement.sigmaPts.toFixed(2)} pts.
+            </div>
+          )}
+          {activeCompare?.recommendedParams && Object.keys(activeCompare.recommendedParams).length > 0 && (
+            <div className="mt-3 panel rounded p-3">
+              <div className="flex items-center justify-between gap-2 mb-2">
+                <div className="text-[10px] uppercase tracking-widest text-slate-500">Parámetros recomendados</div>
+                <button
+                  onClick={() => applyRecommendationParams(activeCompare.recommendedParams)}
+                  className="px-2 py-1 rounded text-[10px] bg-ai-400/15 border border-ai-400/30 text-ai-400 hover:bg-ai-400/25 transition">
+                  Aplicar a sliders
+                </button>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {Object.entries(activeCompare.recommendedParams).map(([name, value]) => (
+                  <span key={name} className="px-2 py-1 rounded bg-slate-700/60 text-slate-300 text-[10px] num border border-slate-600">
+                    {name}: {typeof value === 'number' ? value.toFixed(value % 1 ? 3 : 0) : value}
+                  </span>
+                ))}
+              </div>
             </div>
           )}
           {activeRecommendation?.scenarios?.length ? (
