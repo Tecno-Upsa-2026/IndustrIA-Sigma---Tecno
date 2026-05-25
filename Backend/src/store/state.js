@@ -329,6 +329,15 @@ export function buildFromCSV(configRows = [], dataRows = []) {
         pvar.value      = cal.mean;
         pvar.calibrated = true;
 
+        // Expand min/max if calibrated mean falls outside the configured range
+        if (cal.mean < pvar.min || cal.mean > pvar.max) {
+          const span = Math.max(cal.std * 6, Math.abs(cal.mean) * 0.2, 1);
+          pvar.min = parseFloat((cal.mean - span).toFixed(4));
+          pvar.max = parseFloat((cal.mean + span).toFixed(4));
+          pvar.warn = parseFloat((cal.mean + span * 0.6).toFixed(4));
+          pvar.crit = parseFloat((cal.mean + span * 0.8).toFixed(4));
+        }
+
         if (machine?.vars[varName]) {
           const mvar = machine.vars[varName];
           mvar.base_value = cal.mean;
@@ -337,6 +346,10 @@ export function buildFromCSV(configRows = [], dataRows = []) {
           mvar.drift      = cal.drift;
           mvar.value      = cal.mean;
           mvar.calibrated = true;
+          mvar.min        = pvar.min;
+          mvar.max        = pvar.max;
+          mvar.warn       = pvar.warn;
+          mvar.crit       = pvar.crit;
           machine[varName] = cal.mean;
         }
       }
