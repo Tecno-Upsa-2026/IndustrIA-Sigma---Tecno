@@ -432,6 +432,11 @@ export default function Dashboard() {
   const handleAddCsv = async (fileName, parsed, rawText) => {
     const id = detectMachineId(fileName, machinesArr);
     actions.addCsv(id, { name: fileName, ...parsed });
+    if (rawText) {
+      actions.recalibrateFromCsv({ machineId: id, csvContent: rawText, fileName }).catch(err => {
+        console.warn('Recalibrate falló (puede ignorarse):', err.message);
+      });
+    }
     if (!supabase) return;
     const path = `${id}/${fileName}`;
     const blob = new Blob([rawText], { type: 'text/csv' });

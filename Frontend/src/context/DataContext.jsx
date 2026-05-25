@@ -336,8 +336,11 @@ export function DataProvider({ children }) {
     setActiveCsv:(id)       => dispatch({ type: 'SET_ACTIVE_CSV', id }),
 
     // Recalibrate backend simulation from a CSV the user uploaded
-    recalibrateFromCsv: useCallback(async (machineId, csvContent, fileName) => {
-      return api.recalibrateFromCsv({ machineId, csvContent, fileName });
+    recalibrateFromCsv: useCallback(async (machineIdOrPayload, csvContent, fileName) => {
+      const payload = typeof machineIdOrPayload === 'object' && machineIdOrPayload !== null
+        ? machineIdOrPayload
+        : { machineId: machineIdOrPayload, csvContent, fileName };
+      return api.recalibrateFromCsv(payload);
     }, []),
   };
 
