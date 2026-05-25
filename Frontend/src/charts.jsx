@@ -189,10 +189,12 @@ export function ParetoChart({ data, w=520, h=240 }){
   );
 }
 
-// Live waveform with autoscroll
-export function LiveWave({ color='#22D3EE', amp=10, base=50, speed=80, height=80, smooth=0.18, drift=0 }){
+// Live waveform — uses real data when provided, animated fallback otherwise
+export function LiveWave({ data, color='#22D3EE', amp=10, base=50, speed=80, height=80, smooth=0.18, drift=0 }){
+  const hasReal = Array.isArray(data) && data.length >= 2;
   const [buf, setBuf] = useState(()=> Array(60).fill(base));
   useEffect(()=>{
+    if (hasReal) return;
     const id = setInterval(()=>{
       setBuf(prev=>{
         const last   = prev[prev.length-1];
@@ -202,8 +204,8 @@ export function LiveWave({ color='#22D3EE', amp=10, base=50, speed=80, height=80
       });
     }, speed);
     return ()=> clearInterval(id);
-  },[base,amp,speed,smooth,drift]);
-  return <SparkLine data={buf} h={height} stroke={color} fill={color+'22'} strokeWidth={1.8} showDots/>;
+  },[base,amp,speed,smooth,drift,hasReal]);
+  return <SparkLine data={hasReal ? data : buf} h={height} stroke={color} fill={color+'22'} strokeWidth={1.8} showDots/>;
 }
 
 // Donut

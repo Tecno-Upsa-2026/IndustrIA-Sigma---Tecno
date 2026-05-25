@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { Card, Chip, Stat, PageHeader } from '../shell'
 import { SparkLine } from '../charts'
-import { ALERTS as MOCK_ALERTS, makeSeries } from '../data'
 import { I } from '../icons'
 import { useData } from '../context/DataContext'
 import { supabase } from '../lib/supabase'
@@ -194,16 +193,8 @@ function buildCsvContext(data) {
   return `Archivo: ${name} (${rows.length} registros)\nEstadísticas:\n${stats}\n\nÚltimas ${lastRows.length} filas:\n${csvText}`;
 }
 
-// ─── Mock correlations fallback ───────────────────────────────────────────────
-const MOCK_CORRS = [
-  {l:'Vibración', c:0.78, col:'#F59E0B'},
-  {l:'Presión',   c:0.62, col:'#3B82F6'},
-  {l:'Humedad',   c:0.41, col:'#22D3EE'},
-  {l:'Voltaje',  c:-0.32, col:'#A855F7'},
-];
-
 export default function AIAlertsScreen() {
-  const { alerts: liveAlerts, csvFiles, activeCsvId, actions } = useData();
+  const { alerts: liveAlerts, csvFiles, activeCsvId, machineHistory, actions } = useData();
 
   // ── Aggregate CSV alerts from all loaded files ────────────────────────────
   const csvAlerts = Object.entries(csvFiles).flatMap(([id, data]) =>
@@ -213,7 +204,7 @@ export default function AIAlertsScreen() {
   const hasCSV     = csvAlerts.length > 0;
 
   // CSV takes priority: if any CSV is loaded, use CSV-derived alerts
-  const allAlerts  = hasCSV ? csvAlerts : (hasBackend ? liveAlerts : MOCK_ALERTS);
+  const allAlerts  = hasCSV ? csvAlerts : liveAlerts;
   const active     = allAlerts.filter(a => a.status !== 'closed');
 
   const activeCSV = csvFiles[activeCsvId] || Object.values(csvFiles)[0] || null;
@@ -336,19 +327,19 @@ export default function AIAlertsScreen() {
     ? sel.vals.slice(-40)
     : (selCol && selCsvData
         ? selCsvData.rows.map(r => parseFloat(r[selCol])).filter(v => !isNaN(v)).slice(-40)
-        : makeSeries(40, 50, 6, 0.6));
+        : (machineHistory[sel?.machine]?.temp?.slice(-40) ?? []));
 
   const selColor = sel?.sev === 'CRITICAL' ? '#EF4444' : (sel?.sev === 'HIGH' ? '#F59E0B' : '#22D3EE');
 
   const correlations = (selCol && selCsvData)
-    ? (computeCorrelations(selCsvData, selCol) || MOCK_CORRS)
-    : MOCK_CORRS;
+    ? (computeCorrelations(selCsvData, selCol) || [])
+    : [];
 
-  const hasRealCorrs = !!(selCol && selCsvData);
+  const hasRealCorrs = correlations.length > 0;
 
   const dataSource = hasBackend ? 'Backend · tiempo real'
     : hasCSV ? `CSV · ${totalRows} registros`
-    : 'Demo · datos ejemplo';
+    : 'Sin datos — backend offline';
 
   return (
     <div className="p-6 space-y-5">

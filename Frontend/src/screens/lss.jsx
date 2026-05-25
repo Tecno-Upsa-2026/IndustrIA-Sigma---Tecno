@@ -1,7 +1,6 @@
 import { useEffect, useState, useRef } from 'react'
 import { Card, Stat, PageHeader, Chip } from '../shell'
 import { SparkLine, ParetoChart, Histogram, ControlChart } from '../charts'
-import { PARETO, ISHIKAWA } from '../data'
 import { I } from '../icons'
 import { useData } from '../context/DataContext'
 import { generatePDF } from '../lib/pdf'
@@ -63,11 +62,19 @@ function pearsonCorr(xs, ys) {
   return da && db ? num/(da*db) : 0;
 }
 
+const CSV_META_COLS = new Set([
+  'ts','machine_id','machine_name','line','var_name','var_type','unit',
+  'base_value','noise','spring','min','max','warn','crit',
+  'quality_target','quality_usl','quality_lsl','quality_cp','process',
+]);
+
 // ─── Pareto from CSV ──────────────────────────────────────────────────────────
 function computeCSVPareto(csvData) {
   if (!csvData?.rows?.length) return null;
   const numCols = csvData.header.filter(h =>
-    h.toLowerCase() !== 'fecha_hora' && !isNaN(parseFloat(csvData.rows[0]?.[h]))
+    !CSV_META_COLS.has(h.toLowerCase())
+    && h.toLowerCase() !== 'fecha_hora'
+    && !isNaN(parseFloat(csvData.rows[0]?.[h]))
   );
   // Quality column to correlate against (prefer defectos, else yield inverted)
   const qualCol = numCols.find(h => /defecto|defect/i.test(h))
@@ -114,7 +121,9 @@ const M6 = {
 function buildCSVIshikawa(csvData, problem) {
   if (!csvData?.rows?.length) return null;
   const numCols = csvData.header.filter(h =>
-    h.toLowerCase() !== 'fecha_hora' && !isNaN(parseFloat(csvData.rows[0]?.[h]))
+    !CSV_META_COLS.has(h.toLowerCase())
+    && h.toLowerCase() !== 'fecha_hora'
+    && !isNaN(parseFloat(csvData.rows[0]?.[h]))
   );
   // Compute σ and CV per column
   const stats = {};
@@ -153,7 +162,7 @@ function buildCSVIshikawa(csvData, problem) {
     if (med && med.causes.length < 3) med.causes.push(cause);
   });
 
-  return { problem: problem || ISHIKAWA.problem, branches };
+  return { problem: problem || 'Variabilidad del proceso', branches };
 }
 
 const PHASE_META = [
@@ -353,11 +362,9 @@ export default function LSSScreen() {
     );
   }
 
-  // Pareto and Ishikawa: real CSV data when available
+  // Pareto and Ishikawa: computed from CSV only — no mock fallback
   const csvPareto   = activeCSV ? computeCSVPareto(activeCSV)       : null;
   const csvIshikawa = activeCSV ? buildCSVIshikawa(activeCSV, `Análisis · ${machineId}`) : null;
-  const paretoData   = csvPareto   || PARETO;
-  const ishikawaData = csvIshikawa || ISHIKAWA;
 
   return (
     <div id="lss-capture" className="p-6 space-y-5">
@@ -527,15 +534,23 @@ export default function LSSScreen() {
       {/* Pareto + Capability */}
       <div className="grid grid-cols-12 gap-4">
         <Card title="Pareto · variabilidad de proceso"
-              subtitle={csvPareto ? `Correlación con defectos · ${activeCSV?.rows?.length} registros` : '80/20 · vital few · datos demo'}
+              subtitle={csvPareto ? `Correlación con defectos · ${activeCSV?.rows?.length} registros` : 'Cargá un CSV para ver el análisis 80/20'}
               className="col-span-12 xl:col-span-7" accent="cyan">
-          <ParetoChart data={paretoData} w={680} h={260}/>
-          <div className="mt-2 flex items-center gap-4 text-[10px] text-slate-400">
-            <span className="flex items-center gap-1"><span className="w-3 h-2 bg-cyan2-400 rounded-sm"/>
-              {csvPareto ? 'correlación con defectos (|r|×100)' : 'frecuencia'}
-            </span>
-            <span className="flex items-center gap-1"><span className="w-3 h-0.5 bg-ai-400"/>acumulado %</span>
-          </div>
+          {csvPareto ? (
+            <>
+              <ParetoChart data={csvPareto} w={680} h={260}/>
+              <div className="mt-2 flex items-center gap-4 text-[10px] text-slate-400">
+                <span className="flex items-center gap-1"><span className="w-3 h-2 bg-cyan2-400 rounded-sm"/>correlación con defectos (|r|×100)</span>
+                <span className="flex items-center gap-1"><span className="w-3 h-0.5 bg-ai-400"/>acumulado %</span>
+              </div>
+            </>
+          ) : (
+            <div className="flex flex-col items-center justify-center py-10 text-slate-500 gap-2">
+              <div className="text-2xl opacity-30">📊</div>
+              <div className="text-sm">Sin datos CSV para esta máquina</div>
+              <div className="text-xs text-slate-600">Subí un CSV en Dashboard para activar el análisis Pareto</div>
+            </div>
+          )}
         </Card>
 
         <Card title="Análisis de capacidad" subtitle={spcCol ? spcCol.replace(/_/g,' ') : 'variable seleccionada'} className="col-span-12 xl:col-span-5" accent="ai">
@@ -558,9 +573,9 @@ export default function LSSScreen() {
 
       {/* Ishikawa */}
       <Card title="Ishikawa · 6M"
-            subtitle={csvIshikawa ? `Variables del CSV mapeadas a 6M · ${activeCsvId}` : ISHIKAWA.problem}
+            subtitle={csvIshikawa ? `Variables del CSV mapeadas a 6M · ${activeCsvId}` : 'Cargá un CSV para ver el diagrama causa-raíz'}
             accent="cyan">
-        <IshikawaDiagram data={ishikawaData}/>
+        <IshikawaDiagram data={csvIshikawa}/>
       </Card>
 
       {/* Control charts — all 3 in one section */}
@@ -656,7 +671,15 @@ export default function LSSScreen() {
 }
 
 function IshikawaDiagram({ data }) {
-  data = data || ISHIKAWA;
+  if (!data) {
+    return (
+      <div className="flex flex-col items-center justify-center py-10 text-slate-500 gap-2">
+        <div className="text-2xl opacity-30">🐟</div>
+        <div className="text-sm">Sin datos CSV para esta máquina</div>
+        <div className="text-xs text-slate-600">Subí un CSV en Dashboard para activar el diagrama Ishikawa</div>
+      </div>
+    );
+  }
   const W = 980, H = 360;
   const SY  = H / 2;          // spine Y = 180
   const SX1 = 30, SX2 = 816;

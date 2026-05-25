@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import { Card, Chip, PageHeader } from '../shell'
-import { MACHINES as MOCK_MACHINES } from '../data'
 import { I } from '../icons'
 import { useData } from '../context/DataContext'
 
@@ -40,7 +39,7 @@ function buildMachineList(csvFiles, machinesMap) {
   // Machines that have a CSV: derive live values from last row
   const csvMachines = csvIds.map(id => {
     const csv      = csvFiles[id];
-    const fallback = MOCK_MACHINES.find(m => m.id === id) || {};
+    const fallback = machinesMap[id] || {};
     if (!csv?.rows?.length) return null;
     const last = csv.rows[csv.rows.length - 1];
     const h    = csv.header;
@@ -71,7 +70,7 @@ function buildMachineList(csvFiles, machinesMap) {
 
   // Machines without a CSV: use backend or mock
   const csvIdSet = new Set(csvIds);
-  const backendArr = Object.keys(machinesMap).length ? Object.values(machinesMap) : MOCK_MACHINES;
+  const backendArr = Object.values(machinesMap);
   const rest = backendArr
     .filter(m => !csvIdSet.has(m.id))
     .map(m => ({ ...m, hasCSV: false }));

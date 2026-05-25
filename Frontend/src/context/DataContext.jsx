@@ -4,27 +4,31 @@ import { ws  } from '../lib/ws.js';
 
 // ── Initial state (shown while loading / backend offline) ──────────────────────
 const INITIAL = {
-  connected:   false,
-  loading:     true,
-  machines:    {},
-  alerts:      [],
-  metrics:     {},
-  events:      [],
-  production:  [],
-  simulator:   { status: 'idle', results: {}, history: [], params: {}, scenarios: [] },
-  spcData:     {},
-  lss:         null,
-  reports:     [],
-  config:      null,
-  users:       [],
-  profile:     null,
-  aiInsights:  [],
-  aiModels:    [],
-  conversations: [],
+  connected:      false,
+  loading:        true,
+  machines:       {},
+  alerts:         [],
+  metrics:        {},
+  events:         [],
+  production:     [],
+  simulator:      { status: 'idle', results: {}, history: [], params: {}, scenarios: [] },
+  spcData:        {},
+  lss:            null,
+  reports:        [],
+  config:         null,
+  users:          [],
+  profile:        null,
+  aiInsights:     [],
+  aiModels:       [],
+  conversations:  [],
+  anomaly:        {},
+  // Rolling 60-point history per machine, populated by TICK
+  // Structure: { [machineId]: { temp: number[], vib: number[], oee: number[] } }
+  machineHistory: {},
   // CSV files uploaded once in Dashboard, shared across all screens
   // Structure: { [machineId]: { name, header, rows } }
-  csvFiles:    {},
-  activeCsvId: null,
+  csvFiles:       {},
+  activeCsvId:    null,
 };
 
 // ── Reducer ───────────────────────────────────────────────────────────────────
@@ -35,18 +39,40 @@ function reducer(state, action) {
     case 'SEED':              return { ...state, ...action.data, loading: false };
 
     // WebSocket TICK — core live data
-    case 'TICK':
+    case 'TICK': {
+      let history = state.machineHistory;
+      if (action.machines) {
+        history = { ...state.machineHistory };
+        Object.entries(action.machines).forEach(([id, m]) => {
+          const prev = history[id] || {};
+          const next = {
+            temp: [...(prev.temp || []), m.temp ?? 0].slice(-60),
+            vib:  [...(prev.vib  || []), m.vib  ?? 0].slice(-60),
+            oee:  [...(prev.oee  || []), m.oee  ?? 0].slice(-60),
+          };
+          // Track all variable series for live charts
+          if (m.vars) {
+            for (const [k, e] of Object.entries(m.vars)) {
+              next[k] = [...(prev[k] || []), e.value ?? 0].slice(-60);
+            }
+          }
+          history[id] = next;
+        });
+      }
       return {
         ...state,
-        machines:   action.machines   ?? state.machines,
-        alerts:     action.alerts     ?? state.alerts,
-        metrics:    action.metrics    ?? state.metrics,
-        events:     action.events     ?? state.events,
-        production: action.production ?? state.production,
-        simulator:  action.simulator
+        machines:       action.machines   ?? state.machines,
+        alerts:         action.alerts     ?? state.alerts,
+        metrics:        action.metrics    ?? state.metrics,
+        events:         action.events     ?? state.events,
+        production:     action.production ?? state.production,
+        simulator:      action.simulator
           ? { ...state.simulator, ...action.simulator }
           : state.simulator,
+        anomaly:        action.anomaly    ?? state.anomaly,
+        machineHistory: history,
       };
+    }
 
     // Individual REST-triggered updates
     case 'SET_MACHINES':      return { ...state, machines:       action.v };
@@ -142,6 +168,7 @@ export function DataProvider({ children }) {
         events:     msg.events,
         production: msg.production,
         simulator:  msg.simulator,
+        anomaly:    msg.anomaly,
       });
     });
     return () => { offConn(); offDisc(); offTick(); };
@@ -307,6 +334,11 @@ export function DataProvider({ children }) {
     addCsv:      (id, data) => dispatch({ type: 'ADD_CSV',        id, data }),
     removeCsv:   (id)       => dispatch({ type: 'REMOVE_CSV',     id }),
     setActiveCsv:(id)       => dispatch({ type: 'SET_ACTIVE_CSV', id }),
+
+    // Recalibrate backend simulation from a CSV the user uploaded
+    recalibrateFromCsv: useCallback(async (machineId, csvContent, fileName) => {
+      return api.recalibrateFromCsv({ machineId, csvContent, fileName });
+    }, []),
   };
 
   return (

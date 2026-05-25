@@ -117,6 +117,9 @@ export const api = {
   getAIInsights:         ()         => req('GET',    '/ai/insights'),
   getAIModels:           ()         => req('GET',    '/ai/models'),
 
+  // ── Config: recalibration ──────────────────────────────────────────────────
+  recalibrateFromCsv:    (body)     => req('POST',   '/config/recalibrate', body),
+
   // ── Search ─────────────────────────────────────────────────────────────────
   search:                (q)        => req('GET',    `/search?q=${encodeURIComponent(q)}`),
 

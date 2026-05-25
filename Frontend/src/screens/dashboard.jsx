@@ -1,7 +1,6 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Card, Chip, PageHeader, StatusDot } from '../shell'
 import { LiveWave } from '../charts'
-import { MACHINES as MOCK_MACHINES } from '../data'
 import { I } from '../icons'
 import { useData } from '../context/DataContext'
 import { supabase } from '../lib/supabase'
@@ -38,11 +37,39 @@ function detectMachineId(fileName, machinesArr) {
   return match?.id || fileName.replace(/\.(csv|txt)$/i, '');
 }
 
-// ─── CSV parser ────────────────────────────────────────────────────────────────
+// ─── CSV parser (hybrid: skips #CONFIG, reads #WIDE_DATA or fallback) ───────
+// Columns that indicate a Backend long-format CSV (should not be used as wide data)
+const LONG_FORMAT_COLS = new Set(['ts','machine_id','var_name','value']);
+
 function parseCSV(text) {
-  const lines  = text.trim().split('\n');
-  const header = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g,''));
-  const rows   = lines.slice(1).map(line => {
+  const allLines = text.trim().split('\n');
+
+  // Prefer #WIDE_DATA section
+  const wideIdx = allLines.findIndex(l => l.trim() === '#WIDE_DATA');
+  if (wideIdx >= 0) {
+    const wideLines = allLines.slice(wideIdx + 1);
+    const header = wideLines[0].split(',').map(h => h.trim().replace(/^"|"$/g,''));
+    const rows = wideLines.slice(1).map(line => {
+      const vals = line.split(',');
+      return Object.fromEntries(header.map((h,i) => [h, (vals[i]||'').trim().replace(/^"|"$/g,'')]));
+    }).filter(r => Object.values(r).some(v => v !== ''));
+    return { header, rows };
+  }
+
+  // Fallback: strip all #-comment lines, use first remaining as header
+  const dataLines = allLines.filter(l => !l.trim().startsWith('#'));
+  if (dataLines.length < 1) return { header: [], rows: [] };
+
+  // Detect long-format backend CSV and reject
+  const testHeader = dataLines[0].split(',').map(h => h.trim().toLowerCase());
+  if (testHeader.length === 4 && LONG_FORMAT_COLS.has(testHeader[0])
+    && LONG_FORMAT_COLS.has(testHeader[1]) && LONG_FORMAT_COLS.has(testHeader[2])
+    && LONG_FORMAT_COLS.has(testHeader[3])) {
+    return { header: [], rows: [], _error: 'Formato largo del backend. Subí un archivo wide por máquina (BTL-03_historico.csv).' };
+  }
+
+  const header = dataLines[0].split(',').map(h => h.trim().replace(/^"|"$/g,''));
+  const rows = dataLines.slice(1).map(line => {
     const vals = line.split(',');
     return Object.fromEntries(header.map((h,i) => [h, (vals[i]||'').trim().replace(/^"|"$/g,'')]));
   }).filter(r => Object.values(r).some(v => v !== ''));
@@ -214,7 +241,7 @@ function ParamSlider({ label, unit, min, max, step, value, onChange, ideal }) {
 }
 
 // ─── Machine mini card ─────────────────────────────────────────────────────────
-function MachineMini({ m, selected, onSelect, hasCSV }) {
+function MachineMini({ m, selected, onSelect, hasCSV, liveHistory }) {
   const stMap = {
     RUNNING:  { c:'#10B981', txt:'Operando' },
     WARN:     { c:'#F59E0B', txt:'Atención' },
@@ -254,7 +281,7 @@ function MachineMini({ m, selected, onSelect, hasCSV }) {
           <div className="num text-lg" style={{color:s.c}}>{(m.oee||0).toFixed(1)}<span className="text-[10px] text-slate-500 ml-0.5">%</span></div>
         </div>
         <div className="flex-1 ml-3">
-          <LiveWave color={s.c} amp={m.status==='IDLE'?1:m.status==='CRITICAL'?10:6} base={50} speed={m.status==='IDLE'?800:200} height={28}/>
+          <LiveWave data={liveHistory?.temp} color={s.c} amp={m.status==='IDLE'?1:m.status==='CRITICAL'?10:6} base={50} speed={m.status==='IDLE'?800:200} height={28}/>
         </div>
       </div>
       <div className="grid grid-cols-3 gap-1 mt-2 text-[9px]">
@@ -264,43 +291,6 @@ function MachineMini({ m, selected, onSelect, hasCSV }) {
       </div>
     </div>
   );
-}
-
-// ─── Simulation engine ─────────────────────────────────────────────────────────
-function simTick(machines, params, selectedId) {
-  return machines.map(m => {
-    const isSel = m.id === selectedId;
-
-    let temp = m.temp + (Math.random() - 0.5) * 1.5;
-    let vib  = m.vib  + (Math.random() - 0.5) * 0.04;
-    let load = m.load + (Math.random() - 0.5) * 2.5;
-
-    // Apply process variable overrides to selected machine
-    if (isSel) {
-      temp = params.temp      + (Math.random() - 0.5) * 2.5;
-      vib  = params.vibration + (Math.random() - 0.5) * 0.05;
-      load = params.speed     + (Math.random() - 0.5) * 3;
-    }
-
-    // Clamp to realistic ranges
-    temp = Math.max(20,   Math.min(280, temp));
-    vib  = Math.max(0.05, Math.min(1.5,  vib));
-    load = Math.max(0,    Math.min(100,  load));
-
-    // Status thresholds
-    let status;
-    if (load < 4)                                    status = 'IDLE';
-    else if (temp > 245 || vib > 0.88 || load > 95) status = 'CRITICAL';
-    else if (temp > 225 || vib > 0.65 || load > 85) status = 'WARN';
-    else                                             status = 'RUNNING';
-
-    const oeeBase = { RUNNING:91, WARN:74, CRITICAL:57, IDLE:0 }[status];
-    const oee     = Math.max(0, Math.min(100, oeeBase + (Math.random() - 0.5) * 6));
-    const defect  = Math.max(0, m.defect + (Math.random() - 0.5) * 0.4
-      + (isSel ? Math.abs(params.temp - 200) * 0.015 : 0));
-
-    return { ...m, temp, vib, load, status, oee, defect };
-  });
 }
 
 // ─── Local AI insights (no backend needed) ────────────────────────────────────
@@ -370,62 +360,18 @@ function getProcessSuggestion(p) {
 
 // ─── Main Dashboard ───────────────────────────────────────────────────────────
 export default function Dashboard() {
-  const { machines: machinesMap, csvFiles, activeCsvId, aiInsights, actions } = useData();
-  const isBackendConnected = Object.keys(machinesMap).length > 0;
+  const { machines: machinesMap, csvFiles, activeCsvId, aiInsights, connected, machineHistory, actions } = useData();
 
   const [selectedMachine, setSelectedMachine] = useState('BTL-03');
   const [params, setParams] = useState({ temp:204, speed:78, pressure:124, vibration:0.42, torque:214 });
-  const [simMachines, setSimMachines] = useState(MOCK_MACHINES);
 
-  // Use backend data when available, otherwise local simulation
-  const machinesArr   = isBackendConnected ? Object.values(machinesMap) : simMachines;
+  const machinesArr     = Object.values(machinesMap);
   const displayInsights = aiInsights.length ? aiInsights : generateLocalInsights(machinesArr);
 
-  // Refs so simulation tick always sees latest values without restarting the interval
-  const paramsRef   = useRef(params);
-  const selectedRef = useRef(selectedMachine);
-  useEffect(() => { paramsRef.current = params;         }, [params]);
-  useEffect(() => { selectedRef.current = selectedMachine; }, [selectedMachine]);
-
-  // Simulation tick — only when backend is offline
+  // Sync sliders when selected machine changes — TICK values are the primary source
   useEffect(() => {
-    if (isBackendConnected) return;
-    const id = setInterval(() => {
-      setSimMachines(prev => simTick(prev, paramsRef.current, selectedRef.current));
-    }, 2500);
-    return () => clearInterval(id);
-  }, [isBackendConnected]);
-
-  // When a CSV is loaded for any machine, seed that machine's sim values from the CSV last row
-  useEffect(() => {
-    setSimMachines(prev => prev.map(m => {
-      const csv = csvFiles[m.id];
-      if (!csv?.rows?.length) return m;
-      const vals = extractFromCsvRow(csv.rows[csv.rows.length - 1]);
-      const update = {};
-      if (vals.temp != null) update.temp = vals.temp;
-      if (vals.vib  != null) update.vib  = vals.vib;
-      if (vals.load != null) update.load = vals.load;
-      if (vals.oee  != null) update.oee  = vals.oee;
-      if (vals.rpm  != null) update.rpm  = vals.rpm;
-      return Object.keys(update).length ? { ...m, ...update } : m;
-    }));
-  }, [csvFiles]);
-
-  // Sync sliders when selected machine changes OR when its CSV arrives
-  useEffect(() => {
-    const csv = csvFiles[selectedMachine];
-    if (csv?.rows?.length) {
-      const vals = extractFromCsvRow(csv.rows[csv.rows.length - 1]);
-      setParams(p => ({
-        ...p,
-        ...(vals.temp != null ? { temp:      vals.temp } : {}),
-        ...(vals.vib  != null ? { vibration: vals.vib  } : {}),
-        ...(vals.load != null ? { speed:     vals.load } : {}),
-      }));
-    } else {
-      const m = machinesArr.find(x => x.id === selectedMachine);
-      if (!m) return;
+    const m = machinesArr.find(x => x.id === selectedMachine);
+    if (m?.temp != null) {
       setParams(p => ({
         ...p,
         temp:      parseFloat(m.temp.toFixed(1)),
@@ -433,7 +379,7 @@ export default function Dashboard() {
         speed:     parseFloat(m.load.toFixed(0)),
       }));
     }
-  }, [selectedMachine, csvFiles]);
+  }, [selectedMachine]);
 
   useEffect(() => { actions.fetchAIInsights().catch(() => {}); }, []);
 
@@ -457,6 +403,7 @@ export default function Dashboard() {
   const activeCsvData = csvFiles[activeCsvId] || null;
 
   const handleAddCsv = async (fileName, parsed, rawText) => {
+    if (parsed._error) { alert(parsed._error); return; }
     const id = detectMachineId(fileName, machinesArr);
     actions.addCsv(id, { name: fileName, ...parsed });
     if (!supabase) return;
@@ -515,13 +462,22 @@ export default function Dashboard() {
       {/* 2. Machine status grid */}
       <Card
         title="Estado de máquinas"
-        subtitle={`${machinesArr.length} equipos · ${Object.keys(csvFiles).length} con datos reales CSV · ${isBackendConnected ? 'backend online' : 'simulación local'}`}
+        subtitle={machinesArr.length ? `${machinesArr.length} equipos · ${Object.keys(csvFiles).length} con datos CSV · ${connected ? 'backend online' : 'reconectando…'}` : 'Esperando datos del backend…'}
         accent="cyan">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          {machinesArr.map(m => (
-            <MachineMini key={m.id} m={m} selected={selectedMachine} onSelect={setSelectedMachine} hasCSV={!!csvFiles[m.id]}/>
-          ))}
-        </div>
+        {machinesArr.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-12 gap-3 text-slate-500">
+            <div className="w-8 h-8 border-2 border-cyan2-400/40 border-t-cyan2-400 rounded-full animate-spin"/>
+            <div className="text-sm">Conectando al backend…</div>
+            <div className="text-xs text-slate-600">Iniciá el servidor con <code className="num text-slate-400">npm start</code> en /Backend</div>
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            {machinesArr.map(m => (
+              <MachineMini key={m.id} m={m} selected={selectedMachine} onSelect={setSelectedMachine}
+                           hasCSV={!!csvFiles[m.id]} liveHistory={machineHistory[m.id]}/>
+            ))}
+          </div>
+        )}
       </Card>
 
       {/* 3. AI copilot + Process variables */}
