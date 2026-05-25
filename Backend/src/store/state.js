@@ -126,6 +126,7 @@ function computeInitialOEE(profile, defect) {
 function syncProfileAliases(profile) {
   profile.primaryVar = profile.primaryVar || getFirstExisting(profile, PRIMARY_VAR_ORDER[profile.process] || []) || Object.keys(profile.variables)[0] || null;
   profile.summaryVars = profile.summaryVars || {};
+  profile.historicalControlLimits = profile.historicalControlLimits || {};
   profile.summaryVars.temp = profile.summaryVars.temp || getFirstExisting(profile, SUMMARY_VAR_ORDER.temp) || profile.primaryVar;
   profile.summaryVars.vib = profile.summaryVars.vib || getFirstExisting(profile, SUMMARY_VAR_ORDER.vib);
   profile.summaryVars.load = profile.summaryVars.load || getFirstExisting(profile, SUMMARY_VAR_ORDER.load) || profile.primaryVar;
@@ -211,6 +212,8 @@ function buildMachineFromProfile(profile) {
     primaryValue: null,
     qualityVar: null,
   };
+
+  machine.historicalControlLimits = {};
 
   for (const [varName, entry] of Object.entries(profile.variables)) {
     machine.vars[varName] = { ...entry };
@@ -331,6 +334,8 @@ export function buildFromCSV(configRows = [], dataRows = []) {
         pvar.drift      = cal.drift;
         pvar.value      = cal.mean;
         pvar.calibrated = true;
+        pvar.historicalControlLimits = cal.controlLimits || null;
+        profile.historicalControlLimits[varName] = cal.controlLimits || null;
 
         // Expand min/max if calibrated mean falls outside the configured range
         if (cal.mean < pvar.min || cal.mean > pvar.max) {
@@ -353,6 +358,7 @@ export function buildFromCSV(configRows = [], dataRows = []) {
           mvar.max        = pvar.max;
           mvar.warn       = pvar.warn;
           mvar.crit       = pvar.crit;
+          mvar.historicalControlLimits = cal.controlLimits || null;
           machine[varName] = cal.mean;
         }
       }
@@ -458,10 +464,14 @@ export const state = {
   startTime: Date.now(),
 
   machines: INITIAL_STATE.machines,
+  machineHistory: {},
   alerts: buildInitialAlerts(),
   events: buildInitialEvents(),
   spcWindows: INITIAL_STATE.spcWindows,
   productionHistory: buildProductionHistory(),
+  csvDiagnostics: {},
+  recommendations: {},
+  compareResults: {},
 
   simulator: {
     status: 'idle',

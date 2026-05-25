@@ -3,14 +3,25 @@ import { state, getMachinesArray, getActiveAlerts } from '../store/state.js';
 import { calcGlobalMetrics } from '../simulation/metrics.js';
 import { supabase } from '../lib/supabase.js';
 import { chat, generateInsights } from '../services/llm/orchestrator.js';
+import { buildMachineDiagnostics, formatDiagnosticsForLLM, formatPlantDiagnosticsForLLM } from '../services/llm/csv-diagnostics.js';
 
 const router = Router();
 
 // ── Build live plant context for system prompt ────────────────────────────────
-function buildPlantContext() {
+function buildPlantContext({ csvMachineId } = {}) {
   const machines = getMachinesArray();
   const alerts   = getActiveAlerts();
   const metrics  = calcGlobalMetrics();
+  const diagnostics = machines.map(machine => buildMachineDiagnostics(machine.id)).filter(Boolean);
+  const focusedDiagnostics = csvMachineId ? buildMachineDiagnostics(csvMachineId) : null;
+  const diagnosticText = diagnostics
+    .map(diag => formatDiagnosticsForLLM(diag))
+    .filter(text => /fuera de norma|alertas activas/i.test(text))
+    .join('\n\n') || '  (todas las variables dentro de parámetros)';
+
+  const simulatorText = state.simulator?.results && Object.keys(state.simulator.results).length
+    ? `\n\nSIMULADOR ACTIVO:\n${Object.entries(state.simulator.results).map(([k, v]) => `  - ${k}: ${typeof v === 'number' ? v.toFixed?.(2) ?? v : v}`).join('\n')}`
+    : '';
 
   const machineList = machines.map(m =>
     `  - ${m.id} (${m.name}): estado=${m.status}, temp=${m.temp?.toFixed(1)}°C, vib=${m.vib?.toFixed(2)}g, OEE=${m.oee?.toFixed(1)}%, defectos=${m.defect?.toFixed(1)}%`
@@ -37,6 +48,15 @@ Métricas globales:
   - Nivel sigma: ${metrics.sigma}σ
   - Producción/h: ${metrics.production} piezas
   - Alertas críticas: ${alerts.filter(a => a.sev === 'CRITICAL').length}
+
+DIAGNÓSTICO POR VARIABLE:
+${diagnosticText}
+
+CORRELACIONES RELEVANTES:
+${formatPlantDiagnosticsForLLM(machines.slice(0, 6).map(machine => machine.id))}
+
+${focusedDiagnostics ? `CSV ACTIVO (${csvMachineId}):\n${formatDiagnosticsForLLM(focusedDiagnostics)}` : ''}
+${simulatorText}
 
 Enfocate en: calidad (Cp, Cpk, DPMO), OEE, mantenimiento predictivo y optimización de proceso.
 Sé directo. Sin introducciones largas. Máximo 3 párrafos o puntos concretos.`;
@@ -118,7 +138,7 @@ router.get('/conversations', async (_req, res) => {
 
 // POST /api/ai/chat
 router.post('/chat', async (req, res) => {
-  const { message, conversationId, csvContext } = req.body;
+  const { message, conversationId, csvContext, csvMachineId } = req.body;
   if (!message?.trim()) return res.status(400).json({ error: 'message requerido' });
 
   // Persist conversation in Supabase (fallback to in-memory)
@@ -137,8 +157,9 @@ router.post('/chat', async (req, res) => {
   memConv.messages.push({ role: 'user', t: message, ts: Date.now() });
 
   // Build system prompt
-  const systemPrompt = buildPlantContext() +
-    (csvContext ? `\n\nDATOS CSV ADJUNTOS (usá estos datos reales para responder):\n${csvContext}` : '');
+  const diagnostics = csvMachineId ? buildMachineDiagnostics(csvMachineId) : null;
+  const systemPrompt = buildPlantContext({ csvMachineId }) +
+    (!csvMachineId && csvContext ? `\n\nDATOS CSV LEGADO:\n${csvContext}` : '');
 
   // Get history from Supabase or memory
   const dbHistory = await dbGetHistory(convId, 10);
@@ -147,7 +168,7 @@ router.post('/chat', async (req, res) => {
     content: m.content || m.t || '',
   }));
 
-  const aiResult = await chat(history, systemPrompt, csvContext);
+  const aiResult = await chat(history, systemPrompt, diagnostics || csvContext || null);
   const text = aiResult.text || 'No se pudo generar una respuesta.';
 
   // Save AI response
@@ -162,16 +183,24 @@ router.post('/chat', async (req, res) => {
 router.get('/insights', async (_req, res) => {
   try {
     const now = Date.now();
-    if (insightsCache.data && now - insightsCache.ts < 5 * 60 * 1000) {
+    const cacheKey = `${state.tick}:${state.alerts.length}:${state.simulator.status}`;
+    if (insightsCache.data && insightsCache.key === cacheKey) {
       return res.json(insightsCache.data);
     }
 
     const result = await generateInsights(buildPlantContext());
-    insightsCache = { data: result, ts: now };
+    insightsCache = { data: result, ts: now, key: cacheKey };
     res.json(result);
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
+});
+
+// GET /api/ai/diagnostics/:machineId
+router.get('/diagnostics/:machineId', (req, res) => {
+  const diagnostics = buildMachineDiagnostics(req.params.machineId);
+  if (!diagnostics) return res.status(404).json({ error: 'Máquina no encontrada' });
+  res.json({ diagnostics, text: formatDiagnosticsForLLM(diagnostics) });
 });
 
 // GET /api/ai/models

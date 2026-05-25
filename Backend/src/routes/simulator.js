@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { state, addEvent, MACHINE_PROFILES } from '../store/state.js';
 import { calcSimResults } from '../simulation/metrics.js';
 import { getRecommendedSetpoints } from '../simulation/optimizer.js';
+import { buildRecommendations, compareMachineScenarios } from '../services/llm/recommender.js';
 import { broadcaster } from '../ws/broadcaster.js';
 
 const router = Router();
@@ -119,6 +120,30 @@ router.post('/optimize', (req, res) => {
     process: profile.process,
     recommendations,
   });
+});
+
+// POST /api/simulator/recommend — AI-backed recommendations
+router.post('/recommend', (req, res) => {
+  const { machineId } = req.body || {};
+  if (!machineId) return res.status(400).json({ error: 'machineId requerido' });
+
+  const result = buildRecommendations(machineId);
+  if (!result) return res.status(404).json({ error: 'Máquina no encontrada' });
+
+  state.recommendations[machineId] = result;
+  res.json(result);
+});
+
+// POST /api/simulator/compare — compare baseline/current/recommended
+router.post('/compare', (req, res) => {
+  const { machineId, recommendedParams } = req.body || {};
+  if (!machineId) return res.status(400).json({ error: 'machineId requerido' });
+
+  const result = compareMachineScenarios(machineId, recommendedParams || {});
+  if (!result) return res.status(404).json({ error: 'Máquina no encontrada' });
+
+  state.compareResults[machineId] = result;
+  res.json(result);
 });
 
 export default router;

@@ -399,7 +399,7 @@ function QualityPanel({ machine, csvData, liveHistory }) {
 
 // ─── Main Dashboard ───────────────────────────────────────────────────────────
 export default function Dashboard() {
-  const { machines: machinesMap, csvFiles, activeCsvId, connected, machineHistory, actions } = useData();
+  const { machines: machinesMap, csvFiles, activeCsvId, connected, machineHistory, recommendations, actions } = useData();
 
   const [selectedMachine, setSelectedMachine] = useState('BTL-03');
 
@@ -412,6 +412,7 @@ export default function Dashboard() {
 
   const critCount = machinesArr.filter(m => m.status === 'CRITICAL').length;
   const warnCount = machinesArr.filter(m => m.status === 'WARN').length;
+  const improvementMachines = Object.values(recommendations || {}).filter(rec => rec?.scenarios?.length).length;
 
   // Load CSVs from Supabase Storage on mount
   useEffect(() => {
@@ -428,6 +429,15 @@ export default function Dashboard() {
       }
     });
   }, []);
+
+  useEffect(() => {
+    const ids = Object.keys(csvFiles);
+    if (!ids.length) return;
+    ids.forEach(id => {
+      actions.fetchDiagnostics(id).catch(() => {});
+      actions.fetchRecommendations(id).catch(() => {});
+    });
+  }, [Object.keys(csvFiles).join('|')]);
 
   const handleAddCsv = async (fileName, parsed, rawText) => {
     const id = detectMachineId(fileName, machinesArr);
@@ -478,6 +488,27 @@ export default function Dashboard() {
           </div>
         }
       />
+
+      <Card title="Recomendaciones activas" subtitle="Potencial de mejora detectado desde los CSVs cargados" accent="ai">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div className="panel rounded p-3">
+            <div className="text-[10px] uppercase tracking-widest text-slate-500">Máquinas con potencial</div>
+            <div className="num text-2xl text-ai-400 mt-1">{improvementMachines}</div>
+          </div>
+          <div className="panel rounded p-3">
+            <div className="text-[10px] uppercase tracking-widest text-slate-500">CSV cargados</div>
+            <div className="num text-2xl text-cyan2-400 mt-1">{Object.keys(csvFiles).length}</div>
+          </div>
+          <div className="panel rounded p-3">
+            <div className="text-[10px] uppercase tracking-widest text-slate-500">Estado</div>
+            <div className="text-sm text-slate-300 mt-1">
+              {improvementMachines > 0
+                ? `Potencial de mejora identificado en ${improvementMachines} máquinas.`
+                : 'Todavía no hay recomendaciones generadas.'}
+            </div>
+          </div>
+        </div>
+      </Card>
 
       {/* CSV histórico */}
       <CSVSection

@@ -242,6 +242,7 @@ function calcMachineSimResults(vars, profile) {
   const cp         = parseFloat(Math.max(0.5, 1.55 - avgPenalty * 0.8).toFixed(3));
   const cpk        = parseFloat((cp * 0.92).toFixed(3));
   const yieldVal   = parseFloat(Math.max(70, 100 - defect * 1.2).toFixed(1));
+  const oee        = parseFloat(Math.max(0, Math.min(100, profile.initialOee - defect * 1.5)).toFixed(1));
   const dpmo       = Math.round(defect * 10000);
   const sigma      = parseFloat(Math.max(1.5, 5 - defect * 0.3).toFixed(2));
 
@@ -261,5 +262,5 @@ function calcMachineSimResults(vars, profile) {
   const production = Math.round(600 + loadPct * 800 - defect * 15);
   const riskPct    = Math.round(Math.min(99, 10 + avgPenalty * 80));
 
-  return { defect, cp, cpk, yield: yieldVal, dpmo, sigma, energy: energyVal, production, risk: riskPct };
+  return { defect, oee, cp, cpk, yield: yieldVal, dpmo, sigma, energy: energyVal, production, risk: riskPct };
 }

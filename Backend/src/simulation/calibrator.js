@@ -92,6 +92,14 @@ export function calibrateFromDataRows(dataRows = []) {
         spring:          clamp(Math.abs(r1) * 0.08 + 0.02, 0.01, 0.1),
         drift:           trend * 0.01,
         count:           values.length,
+        controlLimits: {
+          mean:        avg,
+          std:         deviation,
+          upper2Sigma: avg + deviation * 2,
+          lower2Sigma: avg - deviation * 2,
+          upper3Sigma: avg + deviation * 3,
+          lower3Sigma: avg - deviation * 3,
+        },
       };
     }
 

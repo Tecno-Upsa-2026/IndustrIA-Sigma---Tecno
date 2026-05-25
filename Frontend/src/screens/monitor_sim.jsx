@@ -79,16 +79,19 @@ function AISuggestion({ params, machineVars, backendResult }) {
 
 // ─── Main screen ──────────────────────────────────────────────────────────────
 export default function MonitorSimScreen() {
-  const { machines: machinesMap, csvFiles, simulator, machineHistory, actions } = useData();
+  const { machines: machinesMap, csvFiles, simulator, machineHistory, recommendations, compareResults, actions } = useData();
   const machinesArr = Object.values(machinesMap);
 
   const [selected, setSelected]     = useState(() => machinesArr[0]?.id || 'BTL-03');
   const [params, setParams]          = useState({});
   const [simRunning, setSimRunning]  = useState(false);
+  const [recommendLoading, setRecommendLoading] = useState(false);
 
   const machine   = machinesMap[selected] || machinesArr[0];
   const csvData   = csvFiles[selected] || null;
   const liveHistory = machineHistory[selected];
+  const activeRecommendation = recommendations?.[selected] || null;
+  const activeCompare = compareResults?.[selected] || null;
 
   // Operative (non-quality) vars for this machine — used for sliders
   const operativeVars = machine
@@ -126,6 +129,19 @@ export default function MonitorSimScreen() {
     setSimRunning(true);
     try { await actions.runSimulator(); } catch (_) {}
     setSimRunning(false);
+  };
+
+  const handleRecommend = async () => {
+    if (!selected) return;
+    setRecommendLoading(true);
+    try {
+      const rec = await actions.fetchRecommendations(selected);
+      const top = rec?.scenarios?.[0];
+      if (top?.recommendedParams) {
+        await actions.fetchCompare({ machineId: selected, recommendedParams: top.recommendedParams });
+      }
+    } catch (_) {}
+    setRecommendLoading(false);
   };
 
   // Resync sliders from last CSV row
@@ -317,6 +333,12 @@ export default function MonitorSimScreen() {
               ? <><span className="w-3 h-3 border border-cyan2-400/40 border-t-cyan2-400 rounded-full animate-spin"/>Ejecutando…</>
               : <>{I.pulse} Ejecutar simulación en backend</>}
           </button>
+          <button
+            onClick={handleRecommend}
+            disabled={recommendLoading}
+            className="mt-2 w-full py-2 rounded-md text-xs font-semibold bg-ai-400/15 border border-ai-400/40 text-ai-400 hover:bg-ai-400/25 disabled:opacity-40 transition flex items-center justify-center gap-2">
+            {recommendLoading ? 'Generando…' : 'Generar recomendaciones IA'}
+          </button>
         </Card>
 
         {/* Impact predictor */}
@@ -376,6 +398,45 @@ export default function MonitorSimScreen() {
         </Card>
 
       </div>
+
+      {(activeCompare || activeRecommendation) && (
+        <Card title="Comparativa IA" subtitle="Baseline histórico, estado actual y estado recomendado" accent="ai">
+          {activeCompare ? (
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+              {[
+                { label: 'Baseline histórico', value: activeCompare.baseline },
+                { label: 'Estado actual', value: activeCompare.current },
+                { label: 'Recomendado por IA', value: activeCompare.recommended },
+              ].map(column => (
+                <div key={column.label} className="panel rounded p-3">
+                  <div className="text-[10px] uppercase tracking-widest text-slate-500 mb-2">{column.label}</div>
+                  <div className="space-y-1 text-xs text-slate-300 num">
+                    <div>Defectos: {column.value.defect.toFixed(2)}%</div>
+                    <div>OEE: {column.value.oee.toFixed(1)}%</div>
+                    <div>Cp: {column.value.cp.toFixed(2)}</div>
+                    <div>Cpk: {column.value.cpk.toFixed(2)}</div>
+                    <div>Sigma: {column.value.sigma.toFixed(2)}</div>
+                    <div>Producción: {column.value.production}</div>
+                    <div>Energía: {column.value.energy}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-sm text-slate-500">Generá una recomendación para ver la comparativa.</div>
+          )}
+          {activeCompare?.improvement && (
+            <div className="mt-3 text-xs text-slate-400">
+              Mejora estimada: defectos {activeCompare.improvement.defectPct.toFixed(2)}%, OEE {activeCompare.improvement.oeePts.toFixed(2)} pts, sigma {activeCompare.improvement.sigmaPts.toFixed(2)} pts.
+            </div>
+          )}
+          {activeRecommendation?.scenarios?.length ? (
+            <div className="mt-3 text-[11px] text-slate-500">
+              Recomendaciones activas: {activeRecommendation.scenarios.map(s => s.variable).join(', ')}
+            </div>
+          ) : null}
+        </Card>
+      )}
     </div>
   );
 }

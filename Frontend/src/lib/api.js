@@ -116,6 +116,11 @@ export const api = {
   chat:                  (body)     => req('POST',   '/ai/chat', body),
   getAIInsights:         ()         => req('GET',    '/ai/insights'),
   getAIModels:           ()         => req('GET',    '/ai/models'),
+  getAIDiagnostics:      (machineId)=> req('GET',    `/ai/diagnostics/${machineId}`),
+
+  // ── AI / Simulator recommendations ───────────────────────────────────────
+  recommendSimulator:    (body)     => req('POST',   '/simulator/recommend', body),
+  compareSimulator:      (body)     => req('POST',   '/simulator/compare', body),
 
   // ── Config: recalibration ──────────────────────────────────────────────────
   recalibrateFromCsv:    (body)     => req('POST',   '/config/recalibrate', body),

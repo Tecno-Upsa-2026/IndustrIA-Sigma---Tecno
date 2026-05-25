@@ -194,20 +194,15 @@ function buildCsvContext(data) {
 }
 
 export default function AIAlertsScreen() {
-  const { alerts: liveAlerts, csvFiles, activeCsvId, machineHistory, actions } = useData();
+  const { alerts: liveAlerts, csvFiles, activeCsvId, machineHistory, csvDiagnostics, recommendations, actions } = useData();
 
-  // ── Aggregate CSV alerts from all loaded files ────────────────────────────
-  const csvAlerts = Object.entries(csvFiles).flatMap(([id, data]) =>
-    detectCSVAlerts(data, id)
-  );
   const hasBackend = liveAlerts.length > 0;
-  const hasCSV     = csvAlerts.length > 0;
-
-  // CSV takes priority: if any CSV is loaded, use CSV-derived alerts
-  const allAlerts  = hasCSV ? csvAlerts : liveAlerts;
-  const active     = allAlerts.filter(a => a.status !== 'closed');
+  const hasCSV     = !!csvFiles[activeCsvId] || Object.keys(csvFiles).length > 0;
+  const active     = liveAlerts.filter(a => a.status !== 'closed');
 
   const activeCSV = csvFiles[activeCsvId] || Object.values(csvFiles)[0] || null;
+  const activeDiagnostics = activeCsvId ? csvDiagnostics?.[activeCsvId] || null : null;
+  const activeRecommendation = activeCsvId ? recommendations?.[activeCsvId] || null : null;
 
   const [filter,   setFilter]   = useState('ALL');
   const [selected, setSelected] = useState(null);
@@ -219,7 +214,12 @@ export default function AIAlertsScreen() {
     if (!selected || !active.find(a => a.id === selected)) {
       setSelected(active[0]?.id ?? null);
     }
-  }, [allAlerts.length]);
+  }, [active.length]);
+
+  useEffect(() => {
+    if (!activeCsvId) return;
+    actions.fetchDiagnostics(activeCsvId).catch(() => {});
+  }, [activeCsvId]);
 
   // Chat state
   const WELCOME = { role:'ai', t:'Hola. Tengo acceso a los datos del CSV cargado y a las alertas detectadas. Podés preguntarme sobre temperaturas, vibraciones, defectos, tendencias o cualquier variable del proceso.' };
@@ -277,8 +277,7 @@ export default function AIAlertsScreen() {
     setChatMsgs(prev => [...prev, { role:'user', t:txt }]);
     setChatLoading(true);
     try {
-      const csvCtx = buildCsvContext(activeCSV);
-      const res = await actions.chat(txt, chatConvId.current, csvCtx);
+      const res = await actions.chat(txt, chatConvId.current, activeCsvId || null);
       chatConvId.current = res.conversationId;
       setChatMsgs(prev => [...prev, { role:'ai', t: res.response?.t || '—' }]);
     } catch {
@@ -337,7 +336,7 @@ export default function AIAlertsScreen() {
 
   const hasRealCorrs = correlations.length > 0;
 
-  const dataSource = hasBackend ? 'Backend · tiempo real'
+  const dataSource = hasBackend ? (hasCSV ? `Backend + CSV · ${totalRows} registros` : 'Backend · tiempo real')
     : hasCSV ? `CSV · ${totalRows} registros`
     : 'Sin datos — backend offline';
 
@@ -369,7 +368,7 @@ export default function AIAlertsScreen() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <div className="panel rounded p-4 corners" style={{color:'#22D3EE'}}>
           <Stat label="Alertas activas" value={String(active.length)}
-                delta={hasCSV ? `${critCount} críticas` : '+3 hoy'} accent="cyan"/>
+          delta={hasCSV ? `${critCount} críticas` : '+3 hoy'} accent="cyan"/>
         </div>
         <div className="panel rounded p-4 corners" style={{color:'#10B981'}}>
           <Stat label={oocStats ? '% Puntos OOC' : 'MTTR promedio'}
@@ -392,6 +391,60 @@ export default function AIAlertsScreen() {
                 accent="amber"/>
         </div>
       </div>
+
+      {activeDiagnostics && (
+        <Card title={`Diagnóstico · ${activeDiagnostics.machineId}`} subtitle={activeDiagnostics.summary} accent="ai">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+            <div className="panel rounded p-3">
+              <div className="text-[10px] uppercase tracking-widest text-slate-500 mb-2">Variables fuera de norma</div>
+              <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+                {activeDiagnostics.flaggedVariables.length ? activeDiagnostics.flaggedVariables.map(variable => (
+                  <div key={variable.name} className="hairline-bottom pb-2 last:pb-0 last:border-0">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-sm text-white">{variable.name}</span>
+                      <span className="num text-xs text-ai-400">{variable.sigmaDelta.toFixed(2)}σ</span>
+                    </div>
+                    <div className="text-[11px] text-slate-400">
+                      actual {variable.current.toFixed(3)}{variable.unit ? ` ${variable.unit}` : ''} · base {variable.historicalMean.toFixed(3)} · tendencia {variable.trend}
+                    </div>
+                    {variable.correlatedWith.length > 0 && (
+                      <div className="text-[10px] text-slate-500 mt-1">
+                        Correlaciones: {variable.correlatedWith.map(item => `${item.name}(r=${item.corr.toFixed(2)})`).join(', ')}
+                      </div>
+                    )}
+                  </div>
+                )) : <div className="text-sm text-slate-500">Todas las variables están dentro de parámetros.</div>}
+              </div>
+            </div>
+            <div className="panel rounded p-3">
+              <div className="flex items-center justify-between mb-2">
+                <div className="text-[10px] uppercase tracking-widest text-slate-500">Recomendaciones IA</div>
+                <button
+                  onClick={() => actions.fetchRecommendations(activeCsvId).catch(() => {})}
+                  className="px-2 py-1 rounded text-[10px] bg-cyan2-400/15 border border-cyan2-400/30 text-cyan2-400">
+                  Generar recomendaciones
+                </button>
+              </div>
+              <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+                {activeRecommendation?.scenarios?.length ? activeRecommendation.scenarios.map((scenario, index) => (
+                  <div key={index} className="panel rounded p-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-sm text-white">{scenario.variable}</span>
+                      <span className="num text-xs text-grind-400">conf {Math.round(scenario.confidence * 100)}%</span>
+                    </div>
+                    <div className="text-[11px] text-slate-400">
+                      {scenario.from.toFixed(3)}{scenario.unit ? ` ${scenario.unit}` : ''} → {scenario.to.toFixed(3)}{scenario.unit ? ` ${scenario.unit}` : ''}
+                    </div>
+                    <div className="text-[10px] text-slate-500 mt-1">
+                      Δ defectos {scenario.impact.defectDelta.toFixed(2)} · Δ OEE {scenario.impact.oeeDelta.toFixed(2)} · Δ σ {scenario.impact.sigmaDelta.toFixed(2)}
+                    </div>
+                  </div>
+                )) : <div className="text-sm text-slate-500">Todavía no hay recomendaciones generadas para este CSV.</div>}
+              </div>
+            </div>
+          </div>
+        </Card>
+      )}
 
       {/* Alert list + Detail */}
       <div className="grid grid-cols-12 gap-4">

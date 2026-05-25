@@ -22,6 +22,9 @@ const INITIAL = {
   aiModels:       [],
   conversations:  [],
   anomaly:        {},
+  csvDiagnostics: {},
+  recommendations:{},
+  compareResults: {},
   // Rolling 60-point history per machine, populated by TICK
   // Structure: { [machineId]: { temp: number[], vib: number[], oee: number[] } }
   machineHistory: {},
@@ -88,6 +91,9 @@ function reducer(state, action) {
     case 'SET_AI_INSIGHTS':   return { ...state, aiInsights:     action.v };
     case 'SET_AI_MODELS':     return { ...state, aiModels:       action.v };
     case 'SET_CONVERSATIONS': return { ...state, conversations:  action.v };
+    case 'SET_CSV_DIAGNOSTICS': return { ...state, csvDiagnostics: { ...state.csvDiagnostics, [action.machineId]: action.v } };
+    case 'SET_RECOMMENDATIONS': return { ...state, recommendations: { ...state.recommendations, [action.machineId]: action.v } };
+    case 'SET_COMPARE_RESULTS': return { ...state, compareResults: { ...state.compareResults, [action.machineId]: action.v } };
 
     case 'ADD_CSV': {
       const next = { ...state.csvFiles, [action.id]: action.data };
@@ -318,13 +324,31 @@ export function DataProvider({ children }) {
       dispatch({ type: 'SET_AI_INSIGHTS', v: insights });
       dispatch({ type: 'SET_AI_MODELS',   v: models   });
     }, []),
+    fetchDiagnostics: useCallback(async (machineId) => {
+      const data = await api.getAIDiagnostics(machineId);
+      dispatch({ type: 'SET_CSV_DIAGNOSTICS', machineId, v: data.diagnostics || data });
+      return data;
+    }, []),
+    fetchRecommendations: useCallback(async (machineId) => {
+      const data = await api.recommendSimulator({ machineId });
+      dispatch({ type: 'SET_RECOMMENDATIONS', machineId, v: data });
+      return data;
+    }, []),
+    fetchCompare: useCallback(async ({ machineId, recommendedParams }) => {
+      const data = await api.compareSimulator({ machineId, recommendedParams });
+      dispatch({ type: 'SET_COMPARE_RESULTS', machineId, v: data });
+      return data;
+    }, []),
     fetchConversations: useCallback(async () => {
       const data = await api.getConversations();
       dispatch({ type: 'SET_CONVERSATIONS', v: data });
       return data;
     }, []),
     chat: useCallback(async (message, conversationId, csvContext) => {
-      const res = await api.chat({ message, conversationId, ...(csvContext ? { csvContext } : {}) });
+      const payload = typeof csvContext === 'string'
+        ? { message, conversationId, csvMachineId: csvContext }
+        : { message, conversationId, ...(csvContext ? { csvContext } : {}) };
+      const res = await api.chat(payload);
       const convs = await api.getConversations();
       dispatch({ type: 'SET_CONVERSATIONS', v: convs });
       return res;

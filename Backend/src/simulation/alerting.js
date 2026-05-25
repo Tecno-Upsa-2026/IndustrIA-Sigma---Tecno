@@ -42,6 +42,92 @@ function resolveAlert(machineId, type) {
   addEvent(`Condición resuelta ${machineId}`, 'ok');
 }
 
+function getHistoricalLimits(profile, variableName) {
+  return profile?.variables?.[variableName]?.historicalControlLimits
+    || profile?.historicalControlLimits?.[variableName]
+    || null;
+}
+
+function getSeries(machineId, variableName) {
+  return state.machineHistory?.[machineId]?.[variableName] || [];
+}
+
+function checkHistoricalThresholds(machine, profile, variableName, value, now) {
+  const limits = getHistoricalLimits(profile, variableName);
+  const series = getSeries(machine.id, variableName);
+  if (!limits || series.length < 6) return;
+
+  const mean = limits.mean ?? limits.center ?? profile.variables?.[variableName]?.base_value ?? value;
+  const sd = Math.max(limits.std ?? profile.variables?.[variableName]?.noise ?? 0.01, 0.01);
+  const z = (value - mean) / sd;
+  const absZ = Math.abs(z);
+
+  const critKey = key(machine.id, `${variableName}_hist_crit`);
+  const highKey = key(machine.id, `${variableName}_hist_high`);
+  const medKey = key(machine.id, `${variableName}_hist_med`);
+
+  if (absZ > 3) {
+    if (!activeThresholds[critKey]) {
+      raiseAlert(
+        machine,
+        `${variableName}_hist_crit`,
+        'CRITICAL',
+        `${variableName} fuera de 3σ — ${machine.id}`,
+        `${variableName}=${value.toFixed(3)} supera la media histórica en ${absZ.toFixed(2)}σ.`,
+        'Revisar la deriva del proceso y validar la causa asignable contra el histórico calibrado.',
+        now,
+      );
+    }
+    return;
+  }
+  if (activeThresholds[critKey]) resolveAlert(machine.id, `${variableName}_hist_crit`);
+
+  const last7 = series.slice(-7);
+  if (last7.length === 7) {
+    const sameSide = last7.every(sample => sample > mean) || last7.every(sample => sample < mean);
+    if (sameSide) {
+      if (!activeThresholds[highKey]) {
+        raiseAlert(
+          machine,
+          `${variableName}_hist_high`,
+          'HIGH',
+          `${variableName} con deriva histórica — ${machine.id}`,
+          `7 puntos consecutivos del mismo lado de la media histórica para ${variableName}.`,
+          'Aplicar revisión de causa especial y ajustar setpoint o mantenimiento preventivo.',
+          now,
+        );
+      }
+    } else if (activeThresholds[highKey]) {
+      resolveAlert(machine.id, `${variableName}_hist_high`);
+    }
+  }
+
+  const last6 = series.slice(-6);
+  if (last6.length === 6) {
+    let increasing = true;
+    let decreasing = true;
+    for (let i = 1; i < last6.length; i++) {
+      if (!(last6[i] > last6[i - 1])) increasing = false;
+      if (!(last6[i] < last6[i - 1])) decreasing = false;
+    }
+    if (increasing || decreasing) {
+      if (!activeThresholds[medKey]) {
+        raiseAlert(
+          machine,
+          `${variableName}_hist_med`,
+          'MEDIUM',
+          `${variableName} con tendencia monotónica — ${machine.id}`,
+          `6 puntos consecutivos ${increasing ? 'ascendentes' : 'descendentes'} en ${variableName}.`,
+          'Monitorear tendencia y revisar si hay un cambio de proceso o instrumento.',
+          now,
+        );
+      }
+    } else if (activeThresholds[medKey]) {
+      resolveAlert(machine.id, `${variableName}_hist_med`);
+    }
+  }
+}
+
 function checkGenericThreshold(machine, profile, variableName, value, now) {
   const variable = profile?.variables?.[variableName];
   if (!variable) return;
@@ -111,6 +197,12 @@ export function checkThresholds(machine) {
   checkGenericThreshold(machine, profile, 'pressure', machine.pressure ?? machine.vars?.pressure?.value ?? 0, now);
   checkGenericThreshold(machine, profile, 'precision', machine.precision ?? machine.vars?.precision?.value ?? 0, now);
   checkGenericThreshold(machine, profile, 'hardness', machine.hardness ?? machine.vars?.hardness?.value ?? 0, now);
+
+  for (const [variableName, entry] of Object.entries(machine.vars || {})) {
+    const current = entry?.value;
+    if (!Number.isFinite(current)) continue;
+    checkHistoricalThresholds(machine, profile, variableName, current, now);
+  }
 }
 
 let eventTimer = 0;

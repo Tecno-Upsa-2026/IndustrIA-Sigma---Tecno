@@ -1,4 +1,5 @@
 import { state, getMachinesArray, MACHINE_PROFILES } from '../../store/state.js';
+import { buildMachineDiagnostics } from './csv-diagnostics.js';
 
 function pickRelevantMachine(query) {
   const text = (query || '').toLowerCase();
@@ -40,13 +41,22 @@ export function ruleBasedResponse(messages, systemPrompt, csvContext) {
   const machine = pickRelevantMachine(lastUser);
   const text = lastUser.toLowerCase();
   const metrics = state.machines;
+  const diagnostics = csvContext && typeof csvContext === 'object' && csvContext.machineId
+    ? csvContext
+    : buildMachineDiagnostics(machine?.id);
 
   const lines = [];
   if (text.includes('temperatura')) {
-    lines.push(`Temperatura en ${machine?.id || 'planta'}: ${Number(machine?.temp || 0).toFixed(1)}°C.`);
+    const tempDiag = diagnostics?.variables?.find(variable => variable.name === 'temperature');
+    lines.push(tempDiag
+      ? `Temperatura en ${machine?.id || 'planta'}: ${tempDiag.current.toFixed(1)}°C (base ${tempDiag.historicalMean.toFixed(1)}°C, ${tempDiag.sigmaDelta.toFixed(1)}σ, tendencia ${tempDiag.trend}).`
+      : `Temperatura en ${machine?.id || 'planta'}: ${Number(machine?.temp || 0).toFixed(1)}°C.`);
   }
   if (text.includes('vibr')) {
-    lines.push(`Vibración actual: ${Number(machine?.vib || 0).toFixed(2)}g.`);
+    const vibDiag = diagnostics?.variables?.find(variable => variable.name === 'vibration');
+    lines.push(vibDiag
+      ? `Vibración actual: ${vibDiag.current.toFixed(2)}g (base ${vibDiag.historicalMean.toFixed(2)}g, ${vibDiag.sigmaDelta.toFixed(1)}σ).`
+      : `Vibración actual: ${Number(machine?.vib || 0).toFixed(2)}g.`);
   }
   if (text.includes('oee')) {
     lines.push(`OEE actual: ${Number(machine?.oee || 0).toFixed(1)}%.`);
@@ -58,6 +68,11 @@ export function ruleBasedResponse(messages, systemPrompt, csvContext) {
     const profile = MACHINE_PROFILES[machine?.id];
     const target = machine?.setpointOverride ?? profile?.tempBase ?? machine?.temp ?? 0;
     lines.push(`Setpoint activo: ${Number(target).toFixed(1)}.`);
+  }
+
+  if (diagnostics?.flaggedVariables?.length) {
+    const top = diagnostics.flaggedVariables[0];
+    lines.push(`Señal principal: ${top.name} en ${top.sigmaDelta.toFixed(1)}σ, correlaciones: ${top.correlatedWith.slice(0, 2).map(item => `${item.name}(r=${item.corr.toFixed(2)})`).join(', ') || 'sin correlaciones fuertes'}.`);
   }
 
   if (!lines.length) {

@@ -64,6 +64,17 @@ function tick() {
 
   for (const machine of getMachinesArray()) {
     updateMachineByProcess(machine);
+
+    const history = state.machineHistory[machine.id] || (state.machineHistory[machine.id] = {});
+    const record = (name, value) => {
+      if (!name) return;
+      history[name] = [...(history[name] || []), value ?? 0].slice(-60);
+    };
+    record('temp', machine.temp);
+    record('vib', machine.vib);
+    record('oee', machine.oee);
+    for (const [name, entry] of Object.entries(machine.vars || {})) record(name, entry.value);
+
     const newStatus = evalStatus(machine);
 
     if (newStatus !== machine.status && machine.status !== 'IDLE') {
