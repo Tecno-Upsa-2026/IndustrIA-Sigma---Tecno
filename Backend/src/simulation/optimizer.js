@@ -1,4 +1,5 @@
 import { predictBottlingMetrics } from './bottling.js';
+// FUTURE: Restore furnace prediction routing when multi-process support is enabled.
 import { predictFurnaceMetrics } from './furnace.js';
 
 function clamp(value, min, max) {
@@ -7,6 +8,7 @@ function clamp(value, min, max) {
 
 function pickPrediction(profile, vars) {
   if (profile.process === 'BOTTLING') return predictBottlingMetrics(vars, profile);
+  // FUTURE: Re-enable furnace prediction routing when furnace simulation returns.
   if (profile.process === 'FURNACE') return predictFurnaceMetrics(vars, profile);
   return { defect: 0, oee: 0 };
 }

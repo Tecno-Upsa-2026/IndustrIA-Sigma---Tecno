@@ -34,6 +34,7 @@ router.get('/pareto', (_req, res) => {
     { cause: 'Otros', count: 10 },
   ];
   // Slightly jitter counts based on live machine data
+  // FUTURE: Keep this furnace-specific reference until multi-process support returns.
   const ovenTemp = state.machines['FUR-01']?.temp || 220;
   base[0].count = Math.round(148 + (ovenTemp - 220) * 2);
   res.json(base);

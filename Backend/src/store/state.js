@@ -14,6 +14,7 @@ const CONFIG_DIR = fileURLToPath(new URL('../../../Ejemplos CSV', import.meta.ur
 
 const PRIMARY_VAR_ORDER = {
   BOTTLING: ['temperature', 'level', 'pressure', 'flow_rate', 'fill_time', 'speed', 'torque', 'position'],
+  // FUTURE: Restore furnace primary ordering when multi-process support is re-enabled.
   FURNACE: ['temperature', 'setpoint_temp', 'residence_time', 'air_flow', 'fan_speed', 'precision', 'drift'],
 };
 
@@ -117,6 +118,7 @@ function computeInitialDefect(profile) {
 }
 
 function computeInitialOEE(profile, defect) {
+  // FUTURE: Keep the furnace bonus branch for the multi-process return path.
   const operationalBonus = profile.process === 'FURNACE' ? 0.8 : 1.2;
   return clamp(parseFloat((96 - defect * 4 - operationalBonus).toFixed(1)), 0, 100);
 }
@@ -238,6 +240,7 @@ function buildSPCWindow(profile) {
     window[33] += noise * 1.5;
   }
 
+  // FUTURE: Preserve furnace SPC adjustment until multi-process support is re-enabled.
   if (profile.machineId === 'FUR-01') {
     window[24] += noise * 1.8;
   }
@@ -381,6 +384,7 @@ function buildFallbackState() {
     { process: 'BOTTLING', machine_id: 'BTL-05', machine_name: 'Tapadora', line: 'Línea 1', var_name: 'torque', var_type: 'operative', unit: 'Nm', base_value: 2.5, noise: 0.15, spring: 0.04, min: 0, max: 5, warn: 3.8, crit: 4.5, quality_target: null, quality_usl: null, quality_lsl: null, quality_cp: null },
     { process: 'BOTTLING', machine_id: 'BTL-05', machine_name: 'Tapadora', line: 'Línea 1', var_name: 'precision', var_type: 'operative', unit: '%', base_value: 97, noise: 1.0, spring: 0.05, min: 80, max: 100, warn: 94, crit: 90, quality_target: null, quality_usl: null, quality_lsl: null, quality_cp: null },
     { process: 'BOTTLING', machine_id: 'BTL-05', machine_name: 'Tapadora', line: 'Línea 1', var_name: 'speed', var_type: 'operative', unit: 'tapas/min', base_value: 80, noise: 6, spring: 0.03, min: 30, max: 140, warn: 110, crit: 125, quality_target: null, quality_usl: null, quality_lsl: null, quality_cp: null },
+    // FUTURE: These furnace fallback rows stay in place until multi-process support is re-enabled.
     { process: 'FURNACE', machine_id: 'FUR-01', machine_name: 'Horno industrial', line: 'Línea 2', var_name: 'temperature', var_type: 'operative', unit: '°C', base_value: 220, noise: 1.5, spring: 0.02, min: 180, max: 260, warn: 242, crit: 248, quality_target: null, quality_usl: null, quality_lsl: null, quality_cp: null },
     { process: 'FURNACE', machine_id: 'FUR-01', machine_name: 'Horno industrial', line: 'Línea 2', var_name: 'residence_time', var_type: 'operative', unit: 'min', base_value: 45, noise: 2, spring: 0.03, min: 20, max: 90, warn: 70, crit: 80, quality_target: null, quality_usl: null, quality_lsl: null, quality_cp: null },
     { process: 'FURNACE', machine_id: 'FUR-02', machine_name: 'Sistema de ventilación', line: 'Línea 2', var_name: 'air_flow', var_type: 'operative', unit: 'm³/s', base_value: 8.5, noise: 0.5, spring: 0.04, min: 2, max: 15, warn: 12, crit: 14, quality_target: null, quality_usl: null, quality_lsl: null, quality_cp: null },
@@ -426,6 +430,7 @@ function buildInitialAlerts() {
   const now = Date.now();
   return [
     { id: 'A-2098', sev: 'CRITICAL', machine: 'FUR-01', title: 'Temperatura del horno en vigilancia', detail: 'La temperatura base requiere seguimiento por estabilidad térmica.', time: '14:02:11', ai: 'Verificar setpoint, ventilación y tiempo de residencia.', status: 'active', ts: now - 1200000 },
+    // FUTURE: Keep furnace alert examples while the process model is paused.
     { id: 'A-2097', sev: 'HIGH', machine: 'BTL-03', title: 'Variabilidad de llenado elevada', detail: 'La llenadora automática es la variable crítica del proceso de embotellado.', time: '13:58:42', ai: 'Revisar boquillas, presión y velocidad de la línea.', status: 'active', ts: now - 1440000 },
     { id: 'A-2096', sev: 'HIGH', machine: 'BTL-02', title: 'Vibración de bomba fuera de tendencia', detail: 'La bomba industrial debe mantener una vibración estable para sostener el caudal.', time: '13:51:08', ai: 'Inspeccionar acople, rodamientos y presión de impulsión.', status: 'active', ts: now - 1720000 },
     { id: 'A-2095', sev: 'MEDIUM', machine: 'FUR-03', title: 'Drift de sensor térmico', detail: 'El sensor térmico muestra deriva leve sobre la base calibrada.', time: '13:44:27', ai: 'Recalibrar sonda y verificar ruido de medición.', status: 'active', ts: now - 2120000 },
@@ -438,6 +443,7 @@ function buildInitialEvents() {
   const now = Date.now();
   return [
     { id: 'E-1', ts: now - 1200000, label: 'Observación térmica FUR-01', kind: 'critical' },
+    // FUTURE: Keep furnace event markers as references for the paused process.
     { id: 'E-2', ts: now - 1440000, label: 'Llenado BTL-03 monitoreado', kind: 'critical' },
     { id: 'E-3', ts: now - 1720000, label: 'Vibración BTL-02 en revisión', kind: 'warn' },
     { id: 'E-4', ts: now - 2880000, label: 'Turno de producción iniciado', kind: 'info' },
@@ -478,6 +484,7 @@ export const state = {
       { id: 'sl1', char: 'Volumen llenado BTL-03 (mL)',      target: 500,  usl: 505,   lsl: 495,   ucl: 503.5, lcl: 496.5, cp: 1.33 },
       { id: 'sl2', char: 'Peso botella BTL-03 (g)',           target: 520,  usl: 526,   lsl: 514,   ucl: 524,   lcl: 516,   cp: 1.33 },
       { id: 'sl3', char: 'Torque tapa BTL-05 (Nm)',           target: 2.5,  usl: 3.2,   lsl: 1.8,   ucl: 3.1,   lcl: 1.9,   cp: 1.33 },
+      // FUTURE: Preserve furnace SPC limits until the furnace model returns.
       { id: 'sl4', char: 'Dureza material FUR-01 (HRC)',      target: 58,   usl: 62,    lsl: 54,    ucl: 61.5,  lcl: 54.5,  cp: 1.33 },
       { id: 'sl5', char: 'Uniformidad térmica FUR-01 (%)',    target: 95,   usl: 99,    lsl: 91,    ucl: 98.5,  lcl: 91.5,  cp: 1.50 },
     ],
@@ -496,6 +503,7 @@ export const state = {
 
   reports: [
     { id: 'r1', tipo: 'DMAIC', nombre: 'Reducción defectos BTL-03', autor: 'L. Mendoza', fecha: '21 May 2026', estado: 'Listo', size: '4.2 MB' },
+    // FUTURE: Keep the furnace report entry as a placeholder for the restored process.
     { id: 'r2', tipo: 'SPC', nombre: 'Capability mensual FUR-01', autor: 'A. Rivera', fecha: '20 May 2026', estado: 'Listo', size: '2.1 MB' },
     { id: 'r3', tipo: 'IA', nombre: 'Predicción fallas Q2', autor: 'NEXUS-AI', fecha: '19 May 2026', estado: 'Listo', size: '1.8 MB' },
     { id: 'r4', tipo: 'Energía', nombre: 'Consumo turno B', autor: 'L. Mendoza', fecha: '18 May 2026', estado: 'Borrador', size: '—' },

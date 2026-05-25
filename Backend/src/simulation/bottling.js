@@ -113,6 +113,12 @@ export function updateBottlingMachine(machine, profile) {
     machine.vib = 0;
   }
 
+  if (!machine.vars.vibration && !machine.vars.vib) {
+    const loadVib = machine.load != null ? Math.abs(machine.load - profile.loadBase) * 0.002 : 0;
+    const tempDrift = machine.temp != null ? Math.abs(machine.temp - profile.tempBase) * 0.003 : 0;
+    machine.vib = parseFloat(Math.max(0, Math.min(1.5, loadVib + tempDrift + 0.05)).toFixed(4));
+  }
+
   if (machine.vars.energy) {
     const baseEnergy = profile.variables.energy?.base_value ?? 0;
     const flow = machine.vars.flow_rate?.value ?? profile.variables.flow_rate?.base_value ?? 0;

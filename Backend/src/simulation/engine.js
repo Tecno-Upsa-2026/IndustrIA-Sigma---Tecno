@@ -52,6 +52,10 @@ function tickSimulator() {
 function updateMachineByProcess(machine) {
   const profile = MACHINE_PROFILES[machine.id];
   if (!profile) return updateMachine(machine);
+
+  // FUTURE: When multi-process is enabled, dispatch by profile.process:
+  //   if (profile.process === 'FURNACE') return updateFurnaceMachine(machine, profile);
+  //   if (profile.process === 'BOTTLING') ...
   return updateGenericMachine(machine, profile);
 }
 

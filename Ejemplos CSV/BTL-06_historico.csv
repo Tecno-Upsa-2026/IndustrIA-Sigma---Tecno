@@ -3,6 +3,7 @@
 #BOTTLING,BTL-06,Etiquetadora,Línea 1,position,operative,mm,50,1.5,0.04,0,100,70,85,,,,
 #BOTTLING,BTL-06,Etiquetadora,Línea 1,precision,operative,%,96,1,0.05,80,100,92,88,,,,
 #BOTTLING,BTL-06,Etiquetadora,Línea 1,speed,operative,etiq/min,90,7,0.03,30,150,120,135,,,,
+#BOTTLING,BTL-06,Etiquetadora,Línea 1,vibration,operative,g,0.22,0.03,0.05,0,1.2,0.5,0.7,,,,
 #BOTTLING,BTL-06,Etiquetadora,Línea 1,label_position,quality,mm,1,0.3,0.05,0,5,3,4,1,2,0,1.33
 #DATA
 ts,machine_id,var_name,value
@@ -318,6 +319,31 @@ ts,machine_id,var_name,value
 154,BTL-06,vibration,0.1392
 155,BTL-06,position,50.7621
 155,BTL-06,vibration,0.1382
+156,BTL-06,vibration,0.2240
+157,BTL-06,vibration,0.2286
+158,BTL-06,vibration,0.2331
+159,BTL-06,vibration,0.2375
+160,BTL-06,vibration,0.2420
+161,BTL-06,vibration,0.2464
+162,BTL-06,vibration,0.2509
+163,BTL-06,vibration,0.2553
+164,BTL-06,vibration,0.2597
+165,BTL-06,vibration,0.2642
+166,BTL-06,vibration,0.2686
+167,BTL-06,vibration,0.2730
+168,BTL-06,vibration,0.2775
+169,BTL-06,vibration,0.2819
+170,BTL-06,vibration,0.2863
+171,BTL-06,vibration,0.2908
+172,BTL-06,vibration,0.2952
+173,BTL-06,vibration,0.2996
+174,BTL-06,vibration,0.3041
+175,BTL-06,vibration,0.3085
+176,BTL-06,vibration,0.3129
+177,BTL-06,vibration,0.3164
+178,BTL-06,vibration,0.3191
+179,BTL-06,vibration,0.3180
+180,BTL-06,vibration,0.3148
 156,BTL-06,position,51.3191
 156,BTL-06,vibration,0.1410
 157,BTL-06,position,50.5267

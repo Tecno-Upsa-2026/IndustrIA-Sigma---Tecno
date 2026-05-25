@@ -1,6 +1,6 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // Shared physics helpers plus a generic fallback model.
-// Specific process models live in bottling.js and furnace.js.
+// Specific process models: bottling.js (active), furnace.js (FUTURE).
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { MACHINE_PROFILES } from '../store/state.js';

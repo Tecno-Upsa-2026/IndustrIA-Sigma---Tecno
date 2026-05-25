@@ -1,3 +1,8 @@
+// FUTURE: This module implements the industrial furnace model.
+// Currently the simulation loop only processes BOTTLING machines.
+// Re-integrate via optimizer.js pickPrediction() and engine.js updateMachineByProcess()
+// when multi-process support is enabled.
+
 import { clamp, springStep } from './physics.js';
 
 function readVar(vars, profile, name, fallback = 0) {

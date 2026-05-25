@@ -9,6 +9,7 @@ BOTTLING,BTL-02,Bomba industrial,Línea 1,energy,operative,kWh,38,2.0,0.04,0,80,
 BOTTLING,BTL-03,Llenadora automática,Línea 1,fill_time,operative,s,2.5,0.15,0.04,1,5,3.5,4.2,,,,
 BOTTLING,BTL-03,Llenadora automática,Línea 1,precision,operative,%,98.5,0.5,0.05,80,100,95,90,,,,
 BOTTLING,BTL-03,Llenadora automática,Línea 1,speed,operative,botellas/min,120,8.0,0.03,40,200,160,180,,,,
+BOTTLING,BTL-03,Llenadora automática,Línea 1,vibration,operative,g,0.18,0.025,0.05,0,1.0,0.45,0.6,,,,
 BOTTLING,BTL-03,Llenadora automática,Línea 1,nozzle_state,operative,,0.95,0.02,0.02,0,1,0.7,0.5,,,,
 BOTTLING,BTL-03,Llenadora automática,Línea 1,fill_volume,quality,mL,500,1.5,0.05,480,520,505,510,500,505,495,1.33
 BOTTLING,BTL-03,Llenadora automática,Línea 1,bottle_weight,quality,g,510,2.0,0.04,490,530,518,525,510,518,502,1.33
@@ -20,10 +21,12 @@ BOTTLING,BTL-04,Banda transportadora,Línea 1,cycle_time,operative,s,3.2,0.2,0.0
 BOTTLING,BTL-05,Tapadora,Línea 1,torque,operative,Nm,2.5,0.15,0.04,0,5,3.8,4.5,,,,
 BOTTLING,BTL-05,Tapadora,Línea 1,precision,operative,%,97,1.0,0.05,80,100,94,90,,,,
 BOTTLING,BTL-05,Tapadora,Línea 1,speed,operative,tapas/min,80,6.0,0.03,30,140,110,125,,,,
+BOTTLING,BTL-05,Tapadora,Línea 1,vibration,operative,g,0.18,0.025,0.05,0,1.0,0.45,0.6,,,,
 BOTTLING,BTL-05,Tapadora,Línea 1,cap_torque,quality,Nm,2.4,0.12,0.04,1,4,3.5,3.8,2.4,3.0,1.8,1.33
 BOTTLING,BTL-06,Etiquetadora,Línea 1,position,operative,mm,50,1.5,0.04,0,100,70,85,,,,
 BOTTLING,BTL-06,Etiquetadora,Línea 1,precision,operative,%,96,1.0,0.05,80,100,92,88,,,,
 BOTTLING,BTL-06,Etiquetadora,Línea 1,speed,operative,etiquetas/min,90,7.0,0.03,30,150,120,135,,,,
+BOTTLING,BTL-06,Etiquetadora,Línea 1,vibration,operative,g,0.22,0.03,0.05,0,1.2,0.5,0.7,,,,
 BOTTLING,BTL-06,Etiquetadora,Línea 1,label_position,quality,mm,1.0,0.3,0.05,0,5,3.0,4.0,1.0,2.0,0.0,1.33
 FURNACE,FUR-01,Horno industrial,Línea 2,temperature,operative,°C,220,1.5,0.02,180,260,242,248,,,,
 FURNACE,FUR-01,Horno industrial,Línea 2,residence_time,operative,min,45,2.0,0.03,20,90,70,80,,,,

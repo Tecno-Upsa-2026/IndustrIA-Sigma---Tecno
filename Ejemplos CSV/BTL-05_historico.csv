@@ -3,6 +3,7 @@
 #BOTTLING,BTL-05,Tapadora,Línea 1,torque,operative,Nm,2.5,0.15,0.04,0,5,3.8,4.5,,,,
 #BOTTLING,BTL-05,Tapadora,Línea 1,precision,operative,%,97,1,0.05,80,100,94,90,,,,
 #BOTTLING,BTL-05,Tapadora,Línea 1,speed,operative,tap/min,80,6,0.03,30,140,110,125,,,,
+#BOTTLING,BTL-05,Tapadora,Línea 1,vibration,operative,g,0.18,0.025,0.05,0,1.0,0.45,0.6,,,,
 #BOTTLING,BTL-05,Tapadora,Línea 1,cap_torque,quality,Nm,2.4,0.12,0.04,1,4,3.5,3.8,2.4,3,1.8,1.33
 #DATA
 ts,machine_id,var_name,value
@@ -318,6 +319,31 @@ ts,machine_id,var_name,value
 154,BTL-05,vibration,0.1492
 155,BTL-05,torque,2.5762
 155,BTL-05,vibration,0.1482
+156,BTL-05,vibration,0.1820
+157,BTL-05,vibration,0.1864
+158,BTL-05,vibration,0.1909
+159,BTL-05,vibration,0.1948
+160,BTL-05,vibration,0.1996
+161,BTL-05,vibration,0.2037
+162,BTL-05,vibration,0.2079
+163,BTL-05,vibration,0.2125
+164,BTL-05,vibration,0.2168
+165,BTL-05,vibration,0.2214
+166,BTL-05,vibration,0.2259
+167,BTL-05,vibration,0.2303
+168,BTL-05,vibration,0.2347
+169,BTL-05,vibration,0.2391
+170,BTL-05,vibration,0.2438
+171,BTL-05,vibration,0.2482
+172,BTL-05,vibration,0.2526
+173,BTL-05,vibration,0.2570
+174,BTL-05,vibration,0.2613
+175,BTL-05,vibration,0.2658
+176,BTL-05,vibration,0.2701
+177,BTL-05,vibration,0.2744
+178,BTL-05,vibration,0.2786
+179,BTL-05,vibration,0.2798
+180,BTL-05,vibration,0.2769
 156,BTL-05,torque,2.6319
 156,BTL-05,vibration,0.1510
 157,BTL-05,torque,2.5527

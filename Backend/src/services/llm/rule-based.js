@@ -7,6 +7,7 @@ function pickRelevantMachine(query) {
   const exact = machines.find(machine => text.includes(machine.id.toLowerCase()));
   if (exact) return exact;
 
+  // FUTURE: Restore furnace routing when the furnace process is re-enabled.
   if (text.includes('horno') || text.includes('térmica') || text.includes('termic')) {
     return machines.find(machine => machine.process === 'FURNACE') || machines[0];
   }
