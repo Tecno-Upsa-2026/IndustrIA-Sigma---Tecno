@@ -1,15 +1,19 @@
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 import { supabase } from './supabase';
+import { saveReport } from './reportStore';
 
-// ─── Shared: save PDF blob to Supabase + reports table ─────────────────────────
-async function savePDFToSupabase(doc, { type, name, author }) {
-  if (!supabase) return null;
-  const now      = new Date();
-  const reportId = `RPT-${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}-${Date.now().toString().slice(-4)}`;
+// ─── Generate a unique report ID ──────────────────────────────────────────────
+function makeReportId() {
+  const now = new Date();
+  return `RPT-${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}-${Date.now().toString().slice(-4)}`;
+}
+
+// ─── Optional: mirror to Supabase (fire-and-forget, failures are non-fatal) ───
+async function trySupabaseSave(blob, reportId, { type, name, author }) {
+  if (!supabase) return;
   const fileName = `${reportId}.pdf`;
   try {
-    const blob = doc.output('blob');
     const { error: upErr } = await supabase.storage
       .from('reports')
       .upload(fileName, blob, { contentType: 'application/pdf', upsert: true });
@@ -20,7 +24,6 @@ async function savePDFToSupabase(doc, { type, name, author }) {
       });
     }
   } catch (e) { console.error('[PDF] Supabase save error:', e.message); }
-  return reportId;
 }
 
 // ─── Screenshot PDF (html2canvas) ─────────────────────────────────────────────
@@ -48,7 +51,17 @@ export async function generatePDF({ elementId, tipo, nombre, autor = 'Sistema' }
   }
 
   doc.save(`${tipo}-${Date.now()}.pdf`);
-  return await savePDFToSupabase(doc, { type: tipo, name: nombre, author: autor });
+
+  const blob     = doc.output('blob');
+  const reportId = makeReportId();
+  const meta     = {
+    id: reportId, type: tipo,
+    name: nombre || `Reporte ${tipo}`, author: autor,
+    status: 'Listo', created_at: new Date().toISOString(),
+  };
+  await saveReport(meta, blob);
+  trySupabaseSave(blob, reportId, { type: tipo, name: meta.name, author: autor }).catch(() => {});
+  return reportId;
 }
 
 // ─── Data PDF (programmatic, no html2canvas) ───────────────────────────────────
@@ -206,7 +219,17 @@ export async function generateDataReport({ type, machine, col, name, author = 'S
 
   const fileName = `Reporte-${type}-${Date.now()}.pdf`;
   doc.save(fileName);
-  return await savePDFToSupabase(doc, { type, name: name || `Reporte ${type}`, author });
+
+  const blob     = doc.output('blob');
+  const reportId = makeReportId();
+  const rMeta    = {
+    id: reportId, type,
+    name: name || `Reporte ${type}`, author,
+    status: 'Listo', created_at: now.toISOString(),
+  };
+  await saveReport(rMeta, blob);
+  trySupabaseSave(blob, reportId, { type, name: rMeta.name, author }).catch(() => {});
+  return reportId;
 }
 
 function fmt(v, decimals = 3) {

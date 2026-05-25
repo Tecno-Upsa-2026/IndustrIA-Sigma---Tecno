@@ -3,6 +3,7 @@ import { Card, Chip, PageHeader } from '../shell'
 import { I } from '../icons'
 import { supabase } from '../lib/supabase'
 import { generateDataReport, downloadSavedPDF } from '../lib/pdf'
+import { getReports, getReportBlob, deleteLocalReport } from '../lib/reportStore'
 import { useData } from '../context/DataContext'
 
 // ─── Stats from CSV column ────────────────────────────────────────────────────
@@ -61,32 +62,48 @@ export default function ReportsScreen() {
   useEffect(() => { setGCol(''); }, [activeMachine]);
 
   const fetchReports = async () => {
-    if (!supabase) { setLoading(false); return; }
-    const { data, error } = await supabase
-      .from('reports').select('*').order('created_at', { ascending: false });
-    if (!error && data) setReports(data);
-    setLoading(false);
+    try {
+      const data = await getReports();
+      setReports(data);
+    } catch (e) {
+      console.error('[Reports] fetchReports error:', e.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => { fetchReports(); }, []);
 
   // ── Download ────────────────────────────────────────────────────────────────
   const handleDownload = async (r) => {
-    const path = r.content?.storage_path;
-    if (!path) return;
     setDlId(r.id);
-    await downloadSavedPDF(path, `${r.id}.pdf`);
-    setDlId(null);
+    try {
+      const blob = await getReportBlob(r.id);
+      if (blob) {
+        const url = URL.createObjectURL(blob);
+        const a   = document.createElement('a');
+        a.href = url; a.download = `${r.id}.pdf`;
+        a.click();
+        URL.revokeObjectURL(url);
+      } else if (r.content?.storage_path && supabase) {
+        await downloadSavedPDF(r.content.storage_path, `${r.id}.pdf`);
+      }
+    } finally {
+      setDlId(null);
+    }
   };
 
   // ── Delete (with confirmation) ──────────────────────────────────────────────
   const confirmDelete = async () => {
-    if (!supabase || !confirmId) return;
-    const r = reports.find(x => x.id === confirmId);
-    if (r?.content?.storage_path) {
-      await supabase.storage.from('reports').remove([r.content.storage_path]);
+    if (!confirmId) return;
+    await deleteLocalReport(confirmId);
+    if (supabase) {
+      const r = reports.find(x => x.id === confirmId);
+      if (r?.content?.storage_path) {
+        supabase.storage.from('reports').remove([r.content.storage_path]).catch(() => {});
+      }
+      supabase.from('reports').delete().eq('id', confirmId).catch(() => {});
     }
-    await supabase.from('reports').delete().eq('id', confirmId);
     setReports(prev => prev.filter(x => x.id !== confirmId));
     setConfirmId(null);
   };

@@ -16,7 +16,7 @@ function Background() {
       }}/>
       <div className="absolute top-6 left-6 right-6 flex items-center justify-between text-[10px] text-slate-500 tracking-[0.25em] uppercase z-10 num">
         <div className="flex items-center gap-3">
-          <span className="w-1.5 h-1.5 bg-cyan2-400 pulse-dot rounded-full"/>NEXUS · INDUSTRIAL INTELLIGENCE PLATFORM
+          <span className="w-1.5 h-1.5 bg-cyan2-400 pulse-dot rounded-full"/>INDUSTRIA SIGMA · INDUSTRIAL INTELLIGENCE
         </div>
         <div className="flex items-center gap-6">
           <span>NODE · MX-01</span>
@@ -78,7 +78,7 @@ function BrandPanel() {
 
       <div className="absolute bottom-16 left-16 max-w-md">
         <div className="text-cyan2-400 text-[10px] tracking-[0.35em] uppercase mb-3">// SYSTEM STATUS</div>
-        <h1 className="font-display text-4xl font-bold text-white leading-tight">Industrial<br/>Intelligence<br/><span className="text-glow-cyan text-cyan2-400">Platform</span></h1>
+        <h1 className="font-display text-4xl font-bold text-white leading-tight">IndustrIA<br/><span className="text-glow-cyan text-cyan2-400">Sigma</span></h1>
         <p className="text-slate-400 mt-4">Lean Six Sigma · AI · Predictive Analytics. Centro de control distribuido para procesos industriales de alta criticidad.</p>
         <div className="grid grid-cols-3 gap-3 mt-6">
           {[{l:'Plantas',v:'12'},{l:'Activos',v:'487'},{l:'Sensores',v:'3.2K'}].map(s=>(
