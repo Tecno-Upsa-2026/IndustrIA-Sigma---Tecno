@@ -1,37 +1,47 @@
 ====================================================================
-ESTRUCTURA DEL ARCHIVO CSV DE CONFIGURACIÓN Y CALIBRACIÓN
+ESTÁNDAR FUNCIONAL DE ARCHIVOS CSV
 IndustrIA Sigma — Plataforma de Simulación Industrial
 ====================================================================
 
-Este documento define el formato exacto del archivo CSV que
-configura las máquinas de la simulación Y contiene los datos
-históricos para la calibración automática del sistema.
+Este documento define el estándar funcional de los archivos CSV
+que configuran las máquinas de la simulación y contienen los
+datos históricos para la calibración automática del sistema.
 
-El archivo combina DOS tipos de filas en un único archivo:
-- Filas CONFIG: definen las máquinas, variables operativas,
-  perfiles físicos y umbrales de cada submáquina.
-- Filas DATA: contienen mediciones históricas reales que el
-  sistema usa para autocalibrarse: extrae medias, varianzas,
-  autocorrelaciones y tendencias de estos datos para que la
-  simulación replique el comportamiento histórico exacto.
+A diferencia de un enfoque monolítico, el estándar actual
+organiza los datos en **un archivo CSV por máquina** dentro
+del directorio `Ejemplos CSV/`. El backend (vía `loadCSVDir`)
+escanea y carga todos los archivos `.csv` de ese directorio,
+fusionando la configuración y los datos históricos de cada uno.
 
-La razón de combinar ambos en un solo archivo es que la
-configuración exacta que produjo esos datos históricos es
-conocida y documentada. Esto permite que el sistema lea el
-histórico, configure la simulación para que sea estadísticamente
-idéntica al proceso real, y luego permita modificar parámetros
-para ver el efecto de cambios sin perder el realismo base.
+Cada archivo combina DOS tipos de secciones:
+- **CONFIG**: define la máquina, sus variables operativas, perfiles
+  físicos y umbrales (filas comentadas con `#`).
+- **DATA**: contiene mediciones históricas (formato long: ts,
+  machine_id, var_name, value) que el sistema usa para
+  autocalibrarse.
+- **WIDE_DATA** (opcional): vista desnormalizada de los mismos
+  datos, incluyendo indicadores derivados (OEE, defectos, yield).
+  El backend ignora esta sección; es solo para inspección humana
+  o herramientas externas.
 
 
 ====================================================================
-1. FILAS DE CONFIGURACIÓN
+1. SECCIÓN DE CONFIGURACIÓN
 ====================================================================
 
 1.1 FORMATO GENERAL
 
-Cada fila CONFIG representa UNA VARIABLE de UNA SUBMÁQUINA.
-Las filas CONFIG aparecen PRIMERO en el archivo, antes del
-separador #DATA.
+Cada fila CONFIG representa UNA VARIABLE de UNA MÁQUINA.
+Todas las filas CONFIG aparecen al inicio del archivo,
+precedidas por `#CONFIG` y con cada fila prefijada por `#`.
+
+  #CONFIG
+  #process,machine_id,machine_name,line,var_name,var_type,unit,base_value,noise,spring,min,max,warn,crit,quality_target,quality_usl,quality_lsl,quality_cp
+  #BOTTLING,BTL-01,Tanque de almacenamiento,Línea 1,level,operative,%,85,2,0.03,0,100,92,95,,,,
+  ...
+
+El loader (`csv-loader.js`) elimina automáticamente el `#`
+inicial de cada línea al parsear.
 
 1.2 COLUMNAS DE CONFIGURACIÓN
 
@@ -47,7 +57,7 @@ separador #DATA.
 │ unit                 │ texto    │ Unidad de medida                │
 │ base_value           │ número   │ Valor base (target)             │
 │ noise                │ número   │ Ruido aleatorio (σ)             │
-│ spring               │ número   │ Constante resorte (0.01-0.1)    │
+│ spring               │ número   │ Const. resorte (0.01-0.10)      │
 │ min                  │ número   │ Valor mínimo físico              │
 │ max                  │ número   │ Valor máximo físico              │
 │ warn                 │ número   │ Umbral de advertencia            │
@@ -61,13 +71,13 @@ separador #DATA.
 1.3 DESCRIPCIÓN DE COLUMNAS CONFIG
 
 1.3.1 process
-Proceso industrial al que pertenece la submáquina.
+Proceso industrial al que pertenece la máquina.
 Valores posibles: BOTTLING | FURNACE
 Determina qué modelo físico se aplica en el motor de simulación.
 
 1.3.2 machine_id
-Identificador único de la submáquina.
-- BTL-01 a BTL-06 para embotelladora
+Identificador único de la máquina.
+- BTL-01 a BTL-06 para embotellado
 - FUR-01 a FUR-04 para horno
 Cada machine_id aparece en múltiples filas (una por variable).
 
@@ -132,40 +142,43 @@ Cp objetivo del proceso para esta variable de calidad.
 
 
 ====================================================================
-2. FILAS DE DATOS HISTÓRICOS (DATA)
+2. SECCIÓN DE DATOS HISTÓRICOS (DATA)
 ====================================================================
 
 2.1 UBICACIÓN EN EL ARCHIVO
 
-Las filas DATA aparecen DESPUÉS de las filas CONFIG, separadas
+Las filas DATA aparecen DESPUÉS de la sección CONFIG, separadas
 por una línea que contiene exactamente:
 
   #DATA
 
-El sistema detecta automáticamente esta línea divisoria. Todo
-lo que está antes son filas CONFIG. Todo lo que está después
-son filas DATA.
+El sistema detecta automáticamente este separador. Todo lo que
+está antes son filas CONFIG. Todo lo que está después son filas
+DATA (hasta el siguiente marcador `#`, ej. `#WIDE_DATA`).
 
-2.2 COLUMNAS DE DATOS HISTÓRICOS
+2.2 COLUMNAS DE DATOS HISTÓRICOS (LONG FORMAT)
 
 ┌──────────────┬──────────┬────────────────────────────────────┐
 │ Columna       │ Tipo     │ Descripción                        │
 ├──────────────┼──────────┼────────────────────────────────────┤
-│ ts            │ número   │ Timestamp UNIX (ms) o índice       │
-│ machine_id    │ texto    │ ID de la submáquina                │
+│ ts            │ número   │ Índice de tiempo (0, 1, 2, ...)    │
+│ machine_id    │ texto    │ ID de la máquina                   │
 │ var_name      │ texto    │ Nombre de la variable medida       │
 │ value         │ número   │ Valor de la medición               │
 └──────────────┴──────────┴────────────────────────────────────┘
 
 2.3 TS (TIMESTAMP)
-Puede ser un timestamp UNIX en milisegundos (para datos reales)
-o un índice secuencial (para datos sintéticos de ejemplo).
-El calibrator.js solo usa estos valores para calcular tendencias
-temporales (deriva), no para frecuencia de muestreo.
+Índice secuencial (0, 1, 2, …) o timestamp UNIX en milisegundos
+para datos reales. El calibrator.js usa estos valores solo para
+calcular tendencias temporales (deriva), no para frecuencia de
+muestreo. Los datos sintéticos de ejemplo usan índices enteros
+que representan ~1 minuto por tick.
 
 2.4 MACHINE_ID
-Debe coincidir exactamente con un machine_id definido en las
-filas CONFIG. Si no coincide, la fila se ignora.
+Debe coincidir exactamente con el machine_id definido en las
+filas CONFIG del mismo archivo. Como cada archivo pertenece a
+una sola máquina, todas las filas DATA deben compartir el mismo
+machine_id.
 
 2.5 VAR_NAME
 Debe coincidir con un var_name dentro del machine_id en CONFIG.
@@ -179,17 +192,14 @@ factores adicionales:
   a) Deriva (drift): tendencia gradual modelada por regresión
      lineal sobre ts. El calibrador extrae la pendiente y la
      mapea a drift en la simulación.
-     Ej: FUR-01 temperature sube +0.12°C por paso.
 
   b) Correlaciones cruzadas: el valor de una variable puede
-     verse afectado por otra del mismo proceso.
-     Ej: BTL-02 vibration elevada → BTL-03 precision baja
-         FUR-01 temperature alta → FUR-01 hardness baja
+     verse afectado por otra de la misma máquina o proceso.
+     Ej: BTL-02 vibration elevada → BTL-02 flow_rate baja
 
   c) Eventos anómalos: picos o caídas puntuales inyectados
      para probar la detección de anomalías.
      Ej: step 5 → BTL-02 vibration spike +0.4g
-         step 28 → FUR-01 temperature +5°C
 
   La distribución subyacente sigue siendo:
     valor ≈ base_value ± noise * factor_aleatorio
@@ -203,22 +213,64 @@ factores adicionales:
   2,BTL-01,level,83.5
   0,BTL-01,temperature,81.8
   1,BTL-01,temperature,82.5
-  0,BTL-03,fill_volume,501.2
-  1,BTL-03,fill_volume,498.7
+  0,BTL-01,pressure,1.15
+
+Cada archivo contiene ~200 timestamps por variable (aprox. 3h
+20min de historia a 1 medición/min).
 
 
 ====================================================================
-3. ALGORITMO DE CALIBRACIÓN
+3. SECCIÓN WIDE_DATA (OPCIONAL — SOLO INSPECCIÓN)
 ====================================================================
 
-3.1 PROPÓSITO
+Después de los datos en formato long, puede aparecer un bloque
+adicional separado por:
 
-El calibrator.js lee las filas DATA y extrae parámetros
-estadísticos que se usan para ajustar la simulación. El
-objetivo es que los datos generados por la simulación sean
-estadísticamente indistinguibles de los datos históricos.
+  #WIDE_DATA
 
-3.2 QUÉ EXTRAE EL CALIBRADOR
+Con el siguiente formato:
+
+  fecha_hora,<var1>_<unit>,<var2>_<unit>,...,oee_pct,defectos_pct,yield_pct
+  2026-05-24 10:00:00,82.0525,84.2713,1.1549,90.7,1.05,98.95
+
+Propósitos:
+- Inspección visual por humanos u hojas de cálculo.
+- El backend NO procesa esta sección; solo usa el formato long
+  (`#DATA`) para la calibración.
+- Las columnas incluyen siempre `oee_pct`, `defectos_pct` e
+  `yield_pct` como KPIs derivados.
+
+Cada máquina tiene su propia nomenclatura de columnas wide:
+┌──────────┬───────────────────────────────────────────────────┐
+│ Máquina   │ Columnas wide                                     │
+├──────────┼───────────────────────────────────────────────────┤
+│ BTL-01   │ temperatura_C, level_pct, presion_bar              │
+│ BTL-02   │ presion_bar, flow_rate_Lmin, vibracion_g           │
+│ BTL-03   │ temperatura_C, vibracion_g, fill_time_s,           │
+│           │ precision_pct, fill_volume_mL, bottle_weight_g,   │
+│           │ fill_level_pct                                    │
+│ BTL-04   │ velocidad_cinta_m_min, torque_Nm, vibracion_g,     │
+│           │ cycle_time_s                                     │
+│ BTL-05   │ torque_Nm, precision_pct, vibracion_g,             │
+│           │ cap_torque_Nm                                    │
+│ BTL-06   │ position_mm, precision_pct, vibracion_g,           │
+│           │ label_position_mm                                │
+└──────────┴───────────────────────────────────────────────────┘
+
+
+====================================================================
+4. ALGORITMO DE CALIBRACIÓN
+====================================================================
+
+4.1 PROPÓSITO
+
+El `calibrator.js` lee las filas DATA (agregadas de todos los
+archivos del directorio) y extrae parámetros estadísticos que
+se usan para ajustar la simulación. El objetivo es que los datos
+generados por la simulación sean estadísticamente indistinguibles
+de los datos históricos.
+
+4.2 QUÉ EXTRAE EL CALIBRADOR
 
 Por cada par (machine_id, var_name), el calibrador calcula:
 
@@ -243,32 +295,32 @@ Por cada par (machine_id, var_name), el calibrador calcula:
 │                   │   aumentar con el tiempo                  │
 └─────────────────┴────────────────────────────────────────────┘
 
-3.3 FÓRMULAS DEL CALIBRADOR
+4.3 FÓRMULAS DEL CALIBRADOR
 
-  3.3.1 Media:
+  4.3.1 Media:
     μ = (1/n) * Σ valor[i]
 
-  3.3.2 Desviación estándar:
+  4.3.2 Desviación estándar:
     σ = sqrt((1/n) * Σ (valor[i] - μ)²)
 
-  3.3.3 Autocorrelación (lag 1):
+  4.3.3 Autocorrelación (lag 1):
     r₁ = Σ ((valor[i] - μ) * (valor[i+1] - μ)) / Σ (valor[i] - μ)²
 
     Mapeo a spring:
     spring = clamp(|r₁| * 0.08 + 0.02, 0.01, 0.10)
     Si r₁ es negativo (oscilación), spring se ajusta a 0.06
 
-  3.3.4 Tendencia lineal (drift):
+  4.3.4 Tendencia lineal (drift):
     pendiente = Σ ((i - ī) * (valor[i] - μ)) / Σ (i - ī)²
     drift = pendiente * 0.01  (escalado por tick rate)
 
-3.4 DETERMINISMO
+4.4 DETERMINISMO
 
 El algoritmo de calibración es determinista: dado el mismo
-CSV de entrada, siempre produce los mismos parámetros de
-simulación. Esto garantiza reproducibilidad total.
+conjunto de CSVs de entrada, siempre produce los mismos
+parámetros de simulación. Esto garantiza reproducibilidad total.
 
-3.5 MODIFICACIÓN POST-CALIBRACIÓN
+4.5 MODIFICACIÓN POST-CALIBRACIÓN
 
 Una vez calibrada la simulación, el usuario puede modificar
 cualquier parámetro (base_value, noise, spring, thresholds)
@@ -278,17 +330,22 @@ iniciales; no bloquea cambios posteriores.
 
 
 ====================================================================
-4. VARIABLES POR SUBMÁQUINA — EMBOTELLADORA (BOTTLING)
+5. VARIABLES POR MÁQUINA — EMBOTELLADO (BOTTLING)
 ====================================================================
 
-4.1 BTL-01 — Tanque de almacenamiento
+Cada máquina tiene su propio archivo CSV en `Ejemplos CSV/`,
+siguiendo el patrón de nombre `BTL-NN_historico.csv`.
+
+5.1 BTL-01 — Tanque de almacenamiento
+   Archivo: `Ejemplos CSV/BTL-01_historico.csv`
 
 Variables operative:
   level         Nivel del tanque (%) — fluctúa con consumo
   temperature   Temperatura del líquido (°C)
   pressure      Presión interna (bar)
 
-4.2 BTL-02 — Bomba industrial
+5.2 BTL-02 — Bomba industrial
+   Archivo: `Ejemplos CSV/BTL-02_historico.csv`
 
 Variables operative:
   pressure      Presión de salida (bar)
@@ -296,12 +353,14 @@ Variables operative:
   vibration     Vibración del motor (g)
   energy        Consumo energético (kWh)
 
-4.3 BTL-03 — Llenadora automática
+5.3 BTL-03 — Llenadora automática
+   Archivo: `Ejemplos CSV/BTL-03_historico.csv`
 
 Variables operative:
   fill_time     Tiempo de llenado (s)
   precision     Precisión de dosificación (%)
   speed         Velocidad (botellas/min)
+  vibration     Vibración (g)
   nozzle_state  Estado de boquilla (0-1, 1=óptimo)
 
 Variables quality:
@@ -309,7 +368,8 @@ Variables quality:
   bottle_weight Peso de botella llena (g)
   fill_level    Nivel de llenado (%) — SPC
 
-4.4 BTL-04 — Banda transportadora
+5.4 BTL-04 — Banda transportadora
+   Archivo: `Ejemplos CSV/BTL-04_historico.csv`
 
 Variables operative:
   speed         Velocidad (m/s)
@@ -317,32 +377,42 @@ Variables operative:
   vibration     Vibración (g)
   cycle_time    Tiempo de ciclo (s)
 
-4.5 BTL-05 — Tapadora
+5.5 BTL-05 — Tapadora
+   Archivo: `Ejemplos CSV/BTL-05_historico.csv`
 
 Variables operative:
   torque        Torque de cierre (Nm)
   precision     Precisión de posicionamiento (%)
   speed         Velocidad (tapas/min)
+  vibration     Vibración (g)
 
 Variables quality:
   cap_torque    Torque real aplicado a la tapa (Nm)
 
-4.6 BTL-06 — Etiquetadora
+5.6 BTL-06 — Etiquetadora
+   Archivo: `Ejemplos CSV/BTL-06_historico.csv`
 
 Variables operative:
   position      Posición de la etiqueta (mm)
   precision     Precisión de colocación (%)
   speed         Velocidad (etiquetas/min)
+  vibration     Vibración (g)
 
 Variables quality:
   label_position Error de posición de etiqueta (mm)
 
 
 ====================================================================
-5. VARIABLES POR SUBMÁQUINA — HORNO INDUSTRIAL (FURNACE)
+6. VARIABLES POR MÁQUINA — HORNO INDUSTRIAL (FURNACE)
 ====================================================================
 
-5.1 FUR-01 — Horno industrial
+Actualmente las máquinas FURNACE no tienen archivos individuales
+en `Ejemplos CSV/`. Su configuración se define mediante el
+fallback de `state.js` (ver sección 9). Cuando se incorporen,
+deberán seguir el mismo estándar: un archivo por máquina con
+nombre `FUR-NN_historico.csv`.
+
+6.1 FUR-01 — Horno industrial
 
 Variables operative:
   temperature       Temperatura interna (°C)
@@ -355,14 +425,14 @@ Variables quality:
   residual_humidity Humedad residual (%)
   thermal_uniformity Uniformidad térmica (%) — SPC
 
-5.2 FUR-02 — Sistema de ventilación
+6.2 FUR-02 — Sistema de ventilación
 
 Variables operative:
   air_flow          Flujo de aire (m³/s)
   fan_vibration     Vibración del ventilador (g)
   fan_speed         Velocidad del ventilador (RPM)
 
-5.3 FUR-03 — Sensores térmicos
+6.3 FUR-03 — Sensores térmicos
 
 Variables operative:
   precision         Precisión de medición (°C)
@@ -372,7 +442,7 @@ Variables operative:
 Variables quality:
   color_uniformity  Uniformidad de color (%)
 
-5.4 FUR-04 — Controladores PID
+6.4 FUR-04 — Controladores PID
 
 Variables operative:
   setpoint_temp     Temperatura de consigna (°C)
