@@ -7,7 +7,6 @@ import { broadcaster } from './src/ws/broadcaster.js';
 import { startEngine } from './src/simulation/engine.js';
 import router from './src/routes/index.js';
 import { loadSimulationFromCSV } from './src/store/state.js';
-import { calibrateFromDataRows, applyCalibration } from './src/simulation/calibrator.js';
 
 const PORT = process.env.PORT || 3001;
 const app = express();
@@ -23,11 +22,14 @@ broadcaster.init(wss);
 
 try {
   const csvData = loadSimulationFromCSV();
-  const calibrations = calibrateFromDataRows(csvData.dataRows);
-  const updated = applyCalibration(calibrations);
-  console.log(`  [CSV] Configuración cargada: ${Object.keys(csvData.machines).length} máquinas, ${updated} variables calibradas`);
+  const machineCount = Object.keys(csvData.machines).length;
+  const varCount = Object.values(csvData.profiles || {})
+    .reduce((sum, p) => sum + Object.keys(p.variables || {}).length, 0);
+  const corrCount = Object.values(csvData.profiles || {})
+    .filter(p => p.correlations && Object.keys(p.correlations).length > 0).length;
+  console.log(`  [CSV] ${machineCount} máquinas · ${varCount} variables · ${corrCount} con correlaciones calibradas`);
 } catch (error) {
-  console.warn(`  [CSV] No se pudo cargar o calibrar: ${error.message}`);
+  console.warn(`  [CSV] No se pudo cargar: ${error.message}`);
 }
 
 startEngine();

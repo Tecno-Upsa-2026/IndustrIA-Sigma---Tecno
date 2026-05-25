@@ -1,5 +1,3 @@
-import { state, MACHINE_PROFILES } from '../store/state.js';
-
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
@@ -43,89 +41,75 @@ export function linearTrend(values) {
   return denominator === 0 ? 0 : numerator / denominator;
 }
 
+function pearsonCorr(xs, ys) {
+  const n = Math.min(xs.length, ys.length);
+  if (n < 3) return 0;
+  const mx = xs.slice(0, n).reduce((a, b) => a + b, 0) / n;
+  const my = ys.slice(0, n).reduce((a, b) => a + b, 0) / n;
+  const num = xs.slice(0, n).reduce((acc, x, i) => acc + (x - mx) * (ys[i] - my), 0);
+  const da  = Math.sqrt(xs.slice(0, n).reduce((acc, x) => acc + (x - mx) ** 2, 0));
+  const db  = Math.sqrt(ys.slice(0, n).reduce((acc, y) => acc + (y - my) ** 2, 0));
+  return (da && db) ? parseFloat((num / (da * db)).toFixed(4)) : 0;
+}
+
+// Returns { calibrations, correlationsByMachine }
+// calibrations: { "machineId::varName": { mean, std, spring, drift, ... } }
+// correlationsByMachine: { machineId: { varA: { varB: r, ... } } }
 export function calibrateFromDataRows(dataRows = []) {
-  const groups = new Map();
+  const byMachine = new Map();
 
   for (const row of dataRows) {
-    const key = `${row.machine_id}::${row.var_name}`;
-    if (!groups.has(key)) groups.set(key, []);
-    groups.get(key).push(row);
+    if (!byMachine.has(row.machine_id)) byMachine.set(row.machine_id, new Map());
+    const byVar = byMachine.get(row.machine_id);
+    if (!byVar.has(row.var_name)) byVar.set(row.var_name, []);
+    byVar.get(row.var_name).push(row);
   }
 
   const calibrations = {};
+  const correlationsByMachine = {};
 
-  for (const [key, rows] of groups.entries()) {
-    const values = rows.map(row => row.value).filter(Number.isFinite);
-    if (!values.length) continue;
+  for (const [machineId, byVar] of byMachine.entries()) {
+    const varSeries = {};
+    correlationsByMachine[machineId] = {};
 
-    const sorted = [...rows].sort((a, b) => a.ts - b.ts).map(row => row.value);
-    const avg = mean(values);
-    const deviation = std(values);
-    const r1 = autocorrelation(sorted);
-    const trend = linearTrend(sorted);
+    for (const [varName, rows] of byVar.entries()) {
+      const sorted = [...rows].sort((a, b) => a.ts - b.ts);
+      const values = sorted.map(row => row.value).filter(Number.isFinite);
+      if (!values.length) continue;
 
-    calibrations[key] = {
-      mean: avg,
-      std: deviation,
-      autocorrelation: r1,
-      trend,
-      spring: clamp(Math.abs(r1) * 0.08 + 0.02, 0.01, 0.1),
-      drift: trend * 0.01,
-      count: values.length,
-    };
-  }
+      varSeries[varName] = values;
 
-  return calibrations;
-}
+      const avg       = mean(values);
+      const deviation = std(values);
+      const r1        = autocorrelation(values);
+      const trend     = linearTrend(values);
 
-export function applyCalibration(calibrations = {}) {
-  let updated = 0;
-
-  for (const machine of Object.values(state.machines)) {
-    const profile = MACHINE_PROFILES[machine.id];
-    if (!profile) continue;
-
-    for (const [varName, entry] of Object.entries(profile.variables)) {
-      const calibration = calibrations[`${machine.id}::${varName}`];
-      if (!calibration) continue;
-
-      entry.base_value = calibration.mean;
-      entry.noise = calibration.std;
-      entry.spring = calibration.spring;
-      entry.drift = calibration.drift;
-      entry.value = calibration.mean;
-      entry.calibrated = true;
-
-      if (machine.vars[varName]) {
-        machine.vars[varName].base_value = calibration.mean;
-        machine.vars[varName].noise = calibration.std;
-        machine.vars[varName].spring = calibration.spring;
-        machine.vars[varName].drift = calibration.drift;
-        machine.vars[varName].value = calibration.mean;
-      }
-
-      if (machine[varName] !== undefined) {
-        machine[varName] = calibration.mean;
-      }
-
-      updated++;
+      calibrations[`${machineId}::${varName}`] = {
+        mean:            avg,
+        std:             deviation,
+        autocorrelation: r1,
+        trend,
+        spring:          clamp(Math.abs(r1) * 0.08 + 0.02, 0.01, 0.1),
+        drift:           trend * 0.01,
+        count:           values.length,
+      };
     }
 
-    const primaryVar = profile.summaryVars?.temp || profile.primaryVar;
-    if (primaryVar && machine.vars[primaryVar]) {
-      machine.temp = machine.vars[primaryVar].value;
-      machine.primaryValue = machine.vars[primaryVar].value;
+    // Pairwise Pearson correlations between all variables of this machine
+    const varNames = Object.keys(varSeries);
+    for (let i = 0; i < varNames.length; i++) {
+      const nameA = varNames[i];
+      correlationsByMachine[machineId][nameA] = {};
+      for (let j = 0; j < varNames.length; j++) {
+        if (i === j) continue;
+        const nameB = varNames[j];
+        const r = pearsonCorr(varSeries[nameA], varSeries[nameB]);
+        if (Math.abs(r) >= 0.15) {
+          correlationsByMachine[machineId][nameA][nameB] = r;
+        }
+      }
     }
-    const vibVar = profile.summaryVars?.vib;
-    if (vibVar && machine.vars[vibVar]) machine.vib = machine.vars[vibVar].value;
-    const loadVar = profile.summaryVars?.load || primaryVar;
-    if (loadVar && machine.vars[loadVar]) machine.load = machine.vars[loadVar].value;
-    const energyVar = profile.summaryVars?.energy;
-    if (energyVar && machine.vars[energyVar]) machine.energy = machine.vars[energyVar].value;
-
-    machine.defect = clamp(profile.defectBase, 0, 20);
-    machine.oee = clamp(96 - machine.defect * 4, 0, 100);
   }
 
-  return updated;
+  return { calibrations, correlationsByMachine };
 }

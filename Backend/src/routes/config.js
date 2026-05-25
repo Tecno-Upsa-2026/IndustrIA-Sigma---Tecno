@@ -1,6 +1,9 @@
 import { Router } from 'express';
-import { state, getMachinesArray, addEvent } from '../store/state.js';
+import { state, getMachinesArray, addEvent, loadSimulationFromCSV } from '../store/state.js';
 import { supabaseAdmin } from '../lib/supabase.js';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
 const router = Router();
 
@@ -103,6 +106,29 @@ router.delete('/users/:id', (req, res) => {
   if (state.users[idx].id === 'u1') return res.status(403).json({ error: 'No puedes eliminar tu propio usuario' });
   state.users.splice(idx, 1);
   res.json({ ok:true });
+});
+
+// ── Recalibrate simulation from uploaded CSV ──────────────────────────────────
+// POST /api/config/recalibrate
+// Body: { machineId: string, csvContent: string, fileName: string }
+router.post('/recalibrate', (req, res) => {
+  const { machineId, csvContent, fileName } = req.body;
+  if (!csvContent || !fileName) return res.status(400).json({ error: 'csvContent y fileName son requeridos' });
+
+  try {
+    const __dirname = path.dirname(fileURLToPath(import.meta.url));
+    const csvDir = path.resolve(__dirname, '../../../Ejemplos CSV');
+    const destPath = path.join(csvDir, fileName.endsWith('.csv') ? fileName : `${fileName}.csv`);
+
+    fs.writeFileSync(destPath, csvContent, 'utf8');
+    const result = loadSimulationFromCSV(destPath);
+    const machineCount = Object.keys(result.machines || {}).length;
+
+    addEvent(`Simulación recalibrada desde CSV "${fileName}" (${machineCount} máquinas)`, 'info');
+    res.json({ ok: true, machines: machineCount, fileName });
+  } catch (err) {
+    res.status(500).json({ error: `Error procesando CSV: ${err.message}` });
+  }
 });
 
 export default router;

@@ -2,7 +2,7 @@
 // Industrial metrics calculator: SPC stats, OEE, Cp/Cpk, DPMO, Sigma Level.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { state, getMachinesArray } from '../store/state.js';
+import { state, getMachinesArray, MACHINE_PROFILES } from '../store/state.js';
 
 // Normal distribution inverse (approximation — Beasley-Springer-Moro)
 function normInv(p) {
@@ -64,67 +64,92 @@ function sideOf(value, mean) {
   return 0;
 }
 
+// Standard WECO rules (Western Electric Company rules):
+// R1 — 1 point beyond ±3σ
+// R2 — 9 consecutive points on the same side of the mean
+// R3 — 6 consecutive points monotonically increasing or decreasing
+// R4 — 14 consecutive points alternating up/down
+// R5 — 2 of 3 consecutive points beyond ±2σ (zone A), same side
+// R6 — 4 of 5 consecutive points beyond ±1σ (zone B or beyond), same side
+// R7 — 15 consecutive points within ±1σ (zone C, any side)
+// R8 — 8 consecutive points beyond ±1σ on both sides (outside zone C)
 function detectWECO(points, mean, sd) {
   const hits = new Map();
   const zone1 = sd;
   const zone2 = 2 * sd;
   const zone3 = 3 * sd;
 
+  // R1: 1 point beyond ±3σ
   for (let i = 0; i < points.length; i++) {
-    const value = points[i];
-    if (Math.abs(value - mean) > zone3) pushRule(hits, i, 'R1');
+    if (Math.abs(points[i] - mean) > zone3) pushRule(hits, i, 'R1');
   }
 
-  for (let i = 2; i < points.length; i++) {
-    const window = [points[i - 2], points[i - 1], points[i]];
-    const zoneA = window.filter(v => Math.abs(v - mean) > zone2);
-    if (zoneA.length >= 2) {
-      pushRule(hits, i, 'R2');
-      const sameSide = zoneA.every(v => sideOf(v, mean) === sideOf(zoneA[0], mean) && sideOf(v, mean) !== 0);
-      if (sameSide) pushRule(hits, i, 'R8');
-    }
+  // R2: 9 consecutive points on the same side of the mean
+  for (let i = 8; i < points.length; i++) {
+    const window = points.slice(i - 8, i + 1);
+    const side0 = sideOf(window[0], mean);
+    if (side0 !== 0 && window.every(v => sideOf(v, mean) === side0)) pushRule(hits, i, 'R2');
   }
 
-  for (let i = 4; i < points.length; i++) {
-    const window = points.slice(i - 4, i + 1);
-    const zoneB = window.filter(v => Math.abs(v - mean) > zone1);
-    if (zoneB.length >= 4) pushRule(hits, i, 'R3');
-  }
-
-  for (let i = 7; i < points.length; i++) {
-    const window = points.slice(i - 7, i + 1);
-    const sameSide = window.every(v => sideOf(v, mean) !== 0 && sideOf(v, mean) === sideOf(window[0], mean));
-    if (sameSide) pushRule(hits, i, 'R4');
-  }
-
-  for (let i = 14; i < points.length; i++) {
-    const window = points.slice(i - 14, i + 1);
-    const allInsideC = window.every(v => Math.abs(v - mean) <= zone1);
-    if (allInsideC) pushRule(hits, i, 'R5');
-  }
-
-  for (let i = 7; i < points.length; i++) {
-    const window = points.slice(i - 7, i + 1);
-    let increasing = true;
-    let decreasing = true;
+  // R3: 6 consecutive points monotonically increasing or decreasing
+  for (let i = 5; i < points.length; i++) {
+    const window = points.slice(i - 5, i + 1);
+    let up = true, down = true;
     for (let j = 1; j < window.length; j++) {
-      if (!(window[j] > window[j - 1])) increasing = false;
-      if (!(window[j] < window[j - 1])) decreasing = false;
+      if (!(window[j] > window[j - 1])) up   = false;
+      if (!(window[j] < window[j - 1])) down = false;
     }
-    if (increasing || decreasing) pushRule(hits, i, 'R6');
+    if (up || down) pushRule(hits, i, 'R3');
   }
 
+  // R4: 14 consecutive points alternating above/below mean
   for (let i = 13; i < points.length; i++) {
     const window = points.slice(i - 13, i + 1);
     let alternating = true;
     let lastSide = sideOf(window[0], mean);
     if (lastSide === 0) alternating = false;
     for (let j = 1; j < window.length && alternating; j++) {
-      const currentSide = sideOf(window[j], mean);
-      if (currentSide === 0 || currentSide === lastSide) alternating = false;
-      lastSide = currentSide;
+      const cur = sideOf(window[j], mean);
+      if (cur === 0 || cur === lastSide) alternating = false;
+      lastSide = cur;
     }
-    if (alternating) pushRule(hits, i, 'R7');
+    if (alternating) pushRule(hits, i, 'R4');
+  }
+
+  // R5: 2 of 3 consecutive points beyond ±2σ (zone A), same side
+  for (let i = 2; i < points.length; i++) {
+    const window = [points[i - 2], points[i - 1], points[i]];
+    const zoneA = window.filter(v => Math.abs(v - mean) > zone2);
+    if (zoneA.length >= 2) {
+      const allSameSide = zoneA.every(v => sideOf(v, mean) !== 0 && sideOf(v, mean) === sideOf(zoneA[0], mean));
+      if (allSameSide) pushRule(hits, i, 'R5');
+    }
+  }
+
+  // R6: 4 of 5 consecutive points beyond ±1σ (zone B or beyond), same side
+  for (let i = 4; i < points.length; i++) {
+    const window = points.slice(i - 4, i + 1);
+    const zoneB = window.filter(v => Math.abs(v - mean) > zone1);
+    if (zoneB.length >= 4) {
+      const allSameSide = zoneB.every(v => sideOf(v, mean) !== 0 && sideOf(v, mean) === sideOf(zoneB[0], mean));
+      if (allSameSide) pushRule(hits, i, 'R6');
+    }
+  }
+
+  // R7: 15 consecutive points within ±1σ (zone C, any side — hugging the mean)
+  for (let i = 14; i < points.length; i++) {
+    const window = points.slice(i - 14, i + 1);
+    if (window.every(v => Math.abs(v - mean) <= zone1)) pushRule(hits, i, 'R7');
+  }
+
+  // R8: 8 consecutive points beyond ±1σ on either side (outside zone C, both sides present)
+  for (let i = 7; i < points.length; i++) {
+    const window = points.slice(i - 7, i + 1);
+    const allOutsideC = window.every(v => Math.abs(v - mean) > zone1);
+    if (allOutsideC) {
+      const hasBothSides = window.some(v => v > mean) && window.some(v => v < mean);
+      if (hasBothSides) pushRule(hits, i, 'R8');
+    }
   }
 
   return Array.from(hits.values()).sort((a, b) => a.index - b.index);
@@ -174,15 +199,18 @@ export function calcGlobalMetrics() {
 }
 
 // ── Simulator result calculator ───────────────────────────────────────────────
-export function calcSimResults(params) {
-  // Physics model: how params affect quality
-  const { temp, speed, pressure, vibration, torque } = params;
+// When machineId + params.vars are provided, uses profile-aware physics.
+// Falls back to the generic 5-param model for backward compatibility.
+export function calcSimResults(params, machineId) {
+  const profile = machineId ? MACHINE_PROFILES[machineId] : null;
+  if (profile && params?.vars) {
+    return calcMachineSimResults(params.vars, profile);
+  }
 
-  // Baseline temp 220°C — deviation degrades Cp
+  const { temp = 220, speed = 100, pressure = 150, vibration = 0.5, torque = 214 } = params || {};
   const tempDev   = Math.abs(temp - 220) / 20;
   const speedDev  = Math.abs(speed - 100) / 100;
   const vibEffect = vibration / 0.5;
-
   const defect    = parseFloat(Math.max(0.1, 1.0 + tempDev * 4 + vibEffect * 2 + speedDev * 1.5).toFixed(2));
   const cp        = parseFloat(Math.max(0.5, 1.55 - tempDev * 0.5 - vibEffect * 0.3).toFixed(3));
   const cpk       = parseFloat((cp * 0.92).toFixed(3));
@@ -193,6 +221,45 @@ export function calcSimResults(params) {
   const energyVal = Math.round(380 + speed * 0.8 + torque * 0.1);
   const production= Math.round(1400 + speed * 5 - defect * 20);
   const riskPct   = Math.round(Math.min(99, 20 + tempDev * 60 + vibEffect * 40));
+  return { defect, cp, cpk, yield: yieldVal, dpmo, sigma, energy: energyVal, production, risk: riskPct };
+}
+
+function calcMachineSimResults(vars, profile) {
+  let totalPenalty = 0;
+  let count = 0;
+
+  for (const [varName, value] of Object.entries(vars)) {
+    const pvar = profile.variables[varName];
+    if (!pvar) continue;
+    const range = Math.max(pvar.max - pvar.min, 1);
+    const dev   = Math.abs(value - pvar.base_value) / range;
+    totalPenalty += pvar.type === 'quality' ? dev * 4 : dev * 2;
+    count++;
+  }
+
+  const avgPenalty = count ? totalPenalty / count : 0;
+  const defect     = parseFloat(Math.max(0.1, profile.defectBase + avgPenalty * 5).toFixed(2));
+  const cp         = parseFloat(Math.max(0.5, 1.55 - avgPenalty * 0.8).toFixed(3));
+  const cpk        = parseFloat((cp * 0.92).toFixed(3));
+  const yieldVal   = parseFloat(Math.max(70, 100 - defect * 1.2).toFixed(1));
+  const dpmo       = Math.round(defect * 10000);
+  const sigma      = parseFloat(Math.max(1.5, 5 - defect * 0.3).toFixed(2));
+
+  const loadVar   = profile.summaryVars?.load || profile.primaryVar;
+  const loadPvar  = loadVar ? profile.variables[loadVar] : null;
+  const loadVal   = loadVar ? (vars[loadVar] ?? loadPvar?.base_value ?? 0) : 0;
+  const loadMin   = loadPvar?.min ?? 0;
+  const loadMax   = loadPvar?.max ?? Math.max(loadVal * 2, 1);
+  const loadPct   = (loadVal - loadMin) / Math.max(loadMax - loadMin, 1);
+
+  const energyVar  = profile.summaryVars?.energy;
+  const energyBase = energyVar ? (profile.variables[energyVar]?.base_value ?? 0) : 0;
+  const energyVal  = energyBase > 0
+    ? Math.round(energyBase * (1 + avgPenalty * 0.3))
+    : Math.round(200 + loadPct * 300 + avgPenalty * 100);
+
+  const production = Math.round(600 + loadPct * 800 - defect * 15);
+  const riskPct    = Math.round(Math.min(99, 10 + avgPenalty * 80));
 
   return { defect, cp, cpk, yield: yieldVal, dpmo, sigma, energy: energyVal, production, risk: riskPct };
 }

@@ -1,12 +1,11 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // Simulation engine: 1 Hz tick loop.
-// Updates each machine using the matching process model.
+// All machines use the generic correlation-based model from simulator.js.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { state, getMachinesArray, addEvent, MACHINE_PROFILES } from '../store/state.js';
 import { updateMachine, evalStatus, addSPCPoint } from './physics.js';
-import { updateBottlingMachine } from './bottling.js';
-import { updateFurnaceMachine } from './furnace.js';
+import { updateGenericMachine } from './simulator.js';
 import { checkThresholds, maybeGenerateEvent } from './alerting.js';
 import { calcGlobalMetrics, calcSimResults } from './metrics.js';
 import { detectAnomaly, getAnomalyTrend } from './anomaly.js';
@@ -43,7 +42,8 @@ function maybeUpdateProduction() {
 
 function tickSimulator() {
   if (state.simulator.status !== 'running') return;
-  const results = calcSimResults(state.simulator.params);
+  const machineId = state.simulator.params?.machineId;
+  const results   = calcSimResults(state.simulator.params, machineId);
   state.simulator.results = results;
   state.simulator.history.push({ ts: Date.now(), ...results });
   if (state.simulator.history.length > 60) state.simulator.history.shift();
@@ -52,10 +52,7 @@ function tickSimulator() {
 function updateMachineByProcess(machine) {
   const profile = MACHINE_PROFILES[machine.id];
   if (!profile) return updateMachine(machine);
-
-  if (profile.process === 'BOTTLING') return updateBottlingMachine(machine, profile);
-  if (profile.process === 'FURNACE') return updateFurnaceMachine(machine, profile);
-  return updateMachine(machine);
+  return updateGenericMachine(machine, profile);
 }
 
 function tick() {
@@ -92,15 +89,15 @@ function tick() {
   maybeGenerateEvent();
 
   broadcaster.emit({
-    type: 'TICK',
-    ts: Date.now(),
-    tick: state.tick,
-    machines: state.machines,
-    alerts: state.alerts.filter(alert => alert.status !== 'closed').slice(0, 20),
-    metrics: calcGlobalMetrics(),
-    events: state.events.slice(0, 15),
-    simulator: { status: state.simulator.status, results: state.simulator.results },
-    anomaly: Object.fromEntries(
+    type:       'TICK',
+    ts:         Date.now(),
+    tick:       state.tick,
+    machines:   state.machines,
+    alerts:     state.alerts.filter(alert => alert.status !== 'closed').slice(0, 20),
+    metrics:    calcGlobalMetrics(),
+    events:     state.events.slice(0, 15),
+    simulator:  { status: state.simulator.status, results: state.simulator.results },
+    anomaly:    Object.fromEntries(
       getMachinesArray().map(machine => [machine.id, { score: machine.anomalyScore || 0, trend: getAnomalyTrend(machine.id) || [] }])
     ),
     production: state.productionHistory.slice(-60),

@@ -4,12 +4,13 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { fileURLToPath } from 'url';
-import { loadCSV } from '../simulation/csv-loader.js';
+import { loadCSVDir } from '../simulation/csv-loader.js';
+import { calibrateFromDataRows } from '../simulation/calibrator.js';
 
 let _alertSeq = 2099;
 export const nextAlertId = () => `A-${++_alertSeq}`;
 
-const CONFIG_PATH = fileURLToPath(new URL('../../../Ejemplos CSV/maquinaria_completa.csv', import.meta.url));
+const CONFIG_DIR = fileURLToPath(new URL('../../../Ejemplos CSV', import.meta.url));
 
 const PRIMARY_VAR_ORDER = {
   BOTTLING: ['temperature', 'level', 'pressure', 'flow_rate', 'fill_time', 'speed', 'torque', 'position'],
@@ -282,7 +283,7 @@ function buildStateFromProfiles(profiles) {
   return { machines, spcWindows };
 }
 
-export function buildFromCSV(configRows = []) {
+export function buildFromCSV(configRows = [], dataRows = []) {
   if (!Array.isArray(configRows) || !configRows.length) {
     return buildFallbackState();
   }
@@ -306,6 +307,52 @@ export function buildFromCSV(configRows = []) {
   }
 
   const { machines, spcWindows } = buildStateFromProfiles(profiles);
+
+  // Apply calibrations and discover correlations from historical data
+  if (Array.isArray(dataRows) && dataRows.length) {
+    try {
+      const { calibrations, correlationsByMachine } = calibrateFromDataRows(dataRows);
+
+      for (const [key, cal] of Object.entries(calibrations)) {
+        const sep       = key.indexOf('::');
+        const machineId = key.slice(0, sep);
+        const varName   = key.slice(sep + 2);
+        const profile   = profiles[machineId];
+        const machine   = machines[machineId];
+        if (!profile?.variables[varName]) continue;
+
+        const pvar = profile.variables[varName];
+        pvar.base_value = cal.mean;
+        pvar.noise      = cal.std;
+        pvar.spring     = cal.spring;
+        pvar.drift      = cal.drift;
+        pvar.value      = cal.mean;
+        pvar.calibrated = true;
+
+        if (machine?.vars[varName]) {
+          const mvar = machine.vars[varName];
+          mvar.base_value = cal.mean;
+          mvar.noise      = cal.std;
+          mvar.spring     = cal.spring;
+          mvar.drift      = cal.drift;
+          mvar.value      = cal.mean;
+          mvar.calibrated = true;
+          machine[varName] = cal.mean;
+        }
+      }
+
+      for (const [machineId, corr] of Object.entries(correlationsByMachine)) {
+        if (profiles[machineId]) profiles[machineId].correlations = corr;
+      }
+
+      // Re-sync profile derived fields and machine summary aliases
+      for (const profile of Object.values(profiles)) syncProfileAliases(profile);
+      for (const [id, machine] of Object.entries(machines)) syncMachineValuesFromProfile(machine, profiles[id]);
+    } catch (e) {
+      console.warn('[state] calibration skipped:', e.message);
+    }
+  }
+
   return { machines, profiles, spcWindows };
 }
 
@@ -340,9 +387,9 @@ export const MACHINE_PROFILES = {};
 
 const INITIAL_STATE = (() => {
   try {
-    const csv = loadCSV(CONFIG_PATH);
+    const csv = loadCSVDir(CONFIG_DIR);
     if (csv.configRows.length) {
-      return buildFromCSV(csv.configRows);
+      return buildFromCSV(csv.configRows, csv.dataRows);
     }
     return buildFallbackState();
   } catch {
@@ -412,13 +459,14 @@ export const state = {
   },
 
   config: {
-    wecoRules: { r1: true, r2: true, r3: true, r4: false, r5: true, r6: false, r7: false, r8: false },
+    // Standard WECO rules enabled by default: R1,R2,R3,R5 cover the most common violations
+    wecoRules: { r1: true, r2: true, r3: true, r4: false, r5: true, r6: true, r7: false, r8: false },
     spcLimits: [
-      { id: 'sl1', char: 'Diámetro inyector', target: 12.50, usl: 12.65, lsl: 12.35, ucl: 12.62, lcl: 12.38, cp: 1.33 },
-      { id: 'sl2', char: 'Espesor pared', target: 2.40, usl: 2.48, lsl: 2.32, ucl: 2.47, lcl: 2.33, cp: 1.33 },
-      { id: 'sl3', char: 'Peso pieza', target: 48.0, usl: 48.6, lsl: 47.4, ucl: 48.5, lcl: 47.5, cp: 1.50 },
-      { id: 'sl4', char: 'Temperatura curado', target: 214, usl: 220, lsl: 208, ucl: 219, lcl: 209, cp: 1.33 },
-      { id: 'sl5', char: 'Densidad', target: 1.18, usl: 1.22, lsl: 1.14, ucl: 1.21, lcl: 1.15, cp: 1.50 },
+      { id: 'sl1', char: 'Volumen llenado BTL-03 (mL)',      target: 500,  usl: 505,   lsl: 495,   ucl: 503.5, lcl: 496.5, cp: 1.33 },
+      { id: 'sl2', char: 'Peso botella BTL-03 (g)',           target: 520,  usl: 526,   lsl: 514,   ucl: 524,   lcl: 516,   cp: 1.33 },
+      { id: 'sl3', char: 'Torque tapa BTL-05 (Nm)',           target: 2.5,  usl: 3.2,   lsl: 1.8,   ucl: 3.1,   lcl: 1.9,   cp: 1.33 },
+      { id: 'sl4', char: 'Dureza material FUR-01 (HRC)',      target: 58,   usl: 62,    lsl: 54,    ucl: 61.5,  lcl: 54.5,  cp: 1.33 },
+      { id: 'sl5', char: 'Uniformidad térmica FUR-01 (%)',    target: 95,   usl: 99,    lsl: 91,    ucl: 98.5,  lcl: 91.5,  cp: 1.50 },
     ],
   },
 
@@ -480,9 +528,9 @@ export function syncMachineFromProfile(machine) {
   return machine;
 }
 
-export function loadSimulationFromCSV(filePath = CONFIG_PATH) {
-  const csv = loadCSV(filePath);
-  const built = buildFromCSV(csv.configRows);
+export function loadSimulationFromCSV(_filePath) {
+  const csv = loadCSVDir(CONFIG_DIR);
+  const built = buildFromCSV(csv.configRows, csv.dataRows);
   replaceMachineProfiles(built.profiles);
   replaceSimulationState({ machines: built.machines, spcWindows: built.spcWindows });
   return { ...built, dataRows: csv.dataRows };

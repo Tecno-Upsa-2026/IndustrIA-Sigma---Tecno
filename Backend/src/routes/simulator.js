@@ -18,16 +18,26 @@ router.get('/', (_req, res) => {
 });
 
 // PATCH /api/simulator/params — update parameters
+// Accepts { machineId, vars: { varName: value } } for machine-specific simulation
+// or legacy { temp, speed, pressure, vibration, torque } for generic model
 router.patch('/params', (req, res) => {
-  const { temp, speed, pressure, vibration, torque } = req.body;
-  if (temp      !== undefined) state.simulator.params.temp      = parseFloat(temp);
-  if (speed     !== undefined) state.simulator.params.speed     = parseFloat(speed);
-  if (pressure  !== undefined) state.simulator.params.pressure  = parseFloat(pressure);
-  if (vibration !== undefined) state.simulator.params.vibration = parseFloat(vibration);
-  if (torque    !== undefined) state.simulator.params.torque    = parseFloat(torque);
+  const { temp, speed, pressure, vibration, torque, machineId, vars } = req.body;
 
-  // Recalculate results immediately
-  state.simulator.results = calcSimResults(state.simulator.params);
+  if (vars && machineId) {
+    state.simulator.params = {
+      machineId,
+      vars: Object.fromEntries(Object.entries(vars).map(([k, v]) => [k, parseFloat(v)])),
+    };
+    state.simulator.results = calcSimResults(state.simulator.params, machineId);
+  } else {
+    if (temp      !== undefined) state.simulator.params.temp      = parseFloat(temp);
+    if (speed     !== undefined) state.simulator.params.speed     = parseFloat(speed);
+    if (pressure  !== undefined) state.simulator.params.pressure  = parseFloat(pressure);
+    if (vibration !== undefined) state.simulator.params.vibration = parseFloat(vibration);
+    if (torque    !== undefined) state.simulator.params.torque    = parseFloat(torque);
+    state.simulator.results = calcSimResults(state.simulator.params);
+  }
+
   broadcaster.emit({ type:'SIM_UPDATE', params: state.simulator.params, results: state.simulator.results });
   res.json({ params: state.simulator.params, results: state.simulator.results });
 });
